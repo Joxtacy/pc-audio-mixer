@@ -1,0 +1,9 @@
+[project]
+name = "pc-audio-mixer-test"
+version = "0.1.0"
+description = "Test script for PC Audio Mixer Pico connection"
+dependencies = ["pyserial>=3.5"]
+
+[project.scripts]
+test-pico = "test_pico_connection:main"
+
