@@ -1,17 +1,74 @@
-**/*.rs.bk
-.#*
-.gdb_history
-Cargo.lock
+# Rust
 target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
 
-# editor files
+# Firmware specific
+firmware/target/
+firmware/Cargo.lock
+
+# Tauri
+mixer-gui/src-tauri/target/
+mixer-gui/dist/
+mixer-gui/.svelte-kit/
+mixer-gui/build/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor directories and files
 .vscode/*
-!.vscode/*.md
-!.vscode/*.svd
-!.vscode/launch.json
-!.vscode/tasks.json
 !.vscode/extensions.json
 !.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Build outputs
+*.exe
+*.dmg
+*.app
+*.deb
+*.AppImage
+*.msi
+
+# Jujutsu
+.jj/
 
 # bmad
 _bmad-output/
