@@ -49,10 +49,7 @@ pub fn load_channel_mappings(app_handle: &AppHandle) -> Result<Vec<ChannelMappin
     Ok(config.channel_mappings)
 }
 
-pub fn save_channel_mappings(
-    mappings: &[ChannelMapping],
-    app_handle: &AppHandle,
-) -> Result<()> {
+pub fn save_channel_mappings(mappings: &[ChannelMapping], app_handle: &AppHandle) -> Result<()> {
     let mut config = load_config(app_handle)?;
     config.channel_mappings = mappings.to_vec();
     save_config(app_handle, &config)?;

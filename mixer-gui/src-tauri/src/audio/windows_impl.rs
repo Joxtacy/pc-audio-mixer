@@ -1,17 +1,20 @@
+use anyhow::{anyhow, Result};
+use std::sync::Once;
 #[cfg(target_os = "windows")]
 use windows::{
     core::*,
     Win32::{
         Media::Audio::{
             eConsole, eRender,
-            Endpoints::{IAudioEndpointVolume, IAudioSessionControl2, IAudioSessionEnumerator, IAudioSessionManager2},
-            IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, ISimpleAudioVolume,
+            Endpoints::{
+                IAudioEndpointVolume, IAudioSessionControl2, IAudioSessionEnumerator,
+                IAudioSessionManager2,
+            },
+            IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator,
         },
         System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED},
     },
 };
-use anyhow::{anyhow, Result};
-use std::sync::Once;
 
 use crate::audio::AudioManager;
 use crate::types::AudioSession;
@@ -19,10 +22,8 @@ use crate::types::AudioSession;
 static INIT_COM: Once = Once::new();
 
 fn ensure_com_initialized() {
-    INIT_COM.call_once(|| {
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        }
+    INIT_COM.call_once(|| unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
     });
 }
 
@@ -57,8 +58,7 @@ impl AudioManager for WindowsAudioManager {
     fn get_audio_sessions(&self) -> Result<Vec<AudioSession>> {
         unsafe {
             let session_manager = Self::get_session_manager()?;
-            let enumerator: IAudioSessionEnumerator =
-                session_manager.GetSessionEnumerator()?;
+            let enumerator: IAudioSessionEnumerator = session_manager.GetSessionEnumerator()?;
 
             let count = enumerator.GetCount()?;
             let mut sessions = Vec::new();
@@ -85,7 +85,8 @@ impl AudioManager for WindowsAudioManager {
                     let is_muted = simple_volume.GetMute()?.as_bool();
 
                     // Try to get process name from process ID
-                    let process_name = get_process_name(process_id).unwrap_or_else(|| format!("PID: {}", process_id));
+                    let process_name = get_process_name(process_id)
+                        .unwrap_or_else(|| format!("PID: {}", process_id));
 
                     sessions.push(AudioSession {
                         process_id,
@@ -104,8 +105,7 @@ impl AudioManager for WindowsAudioManager {
     fn set_app_volume(&self, process_id: u32, volume: f32) -> Result<()> {
         unsafe {
             let session_manager = Self::get_session_manager()?;
-            let enumerator: IAudioSessionEnumerator =
-                session_manager.GetSessionEnumerator()?;
+            let enumerator: IAudioSessionEnumerator = session_manager.GetSessionEnumerator()?;
 
             let count = enumerator.GetCount()?;
 
@@ -121,7 +121,10 @@ impl AudioManager for WindowsAudioManager {
                 }
             }
 
-            Err(anyhow!("Audio session not found for process {}", process_id))
+            Err(anyhow!(
+                "Audio session not found for process {}",
+                process_id
+            ))
         }
     }
 
@@ -146,12 +149,13 @@ impl AudioManager for WindowsAudioManager {
 
 #[cfg(target_os = "windows")]
 fn get_process_name(process_id: u32) -> Option<String> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::System::ProcessStatus::K32GetProcessImageFileNameW;
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-    use windows::Win32::Foundation::{CloseHandle, HANDLE};
 
     unsafe {
-        let process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?;
+        let process_handle =
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?;
         if process_handle.is_invalid() {
             return None;
         }
@@ -167,9 +171,7 @@ fn get_process_name(process_id: u32) -> Option<String> {
         let path = String::from_utf16_lossy(&buffer[..len as usize]);
 
         // Extract just the executable name from the full path
-        path.split('\\')
-            .last()
-            .map(|s| s.to_string())
+        path.split('\\').last().map(|s| s.to_string())
     }
 }
 

@@ -22,8 +22,8 @@ impl SerialManager {
     }
 
     pub fn list_ports() -> Result<Vec<SerialPortInfo>> {
-        let ports = serialport::available_ports()
-            .map_err(|e| anyhow!("Failed to list ports: {}", e))?;
+        let ports =
+            serialport::available_ports().map_err(|e| anyhow!("Failed to list ports: {}", e))?;
 
         Ok(ports
             .into_iter()
@@ -66,9 +66,10 @@ impl SerialManager {
                 }
 
                 // Check for common patterns
-                if port_name_lower.contains("usbmodem") ||
-                   port_name_lower.contains("ttyacm") ||
-                   port_name_lower.contains("com") && port_name_lower.len() <= 5 {
+                if port_name_lower.contains("usbmodem")
+                    || port_name_lower.contains("ttyacm")
+                    || port_name_lower.contains("com") && port_name_lower.len() <= 5
+                {
                     // This might be our device
                     return Some(port.port_name);
                 }

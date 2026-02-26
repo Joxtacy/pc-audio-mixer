@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::types::AudioSession;
+use anyhow::Result;
 
 pub trait AudioManager: Send + Sync {
     fn get_audio_sessions(&self) -> Result<Vec<AudioSession>>;

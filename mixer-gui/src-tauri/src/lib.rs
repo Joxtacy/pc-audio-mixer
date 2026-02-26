@@ -1,17 +1,14 @@
 mod audio;
+mod config;
 mod serial;
 mod types;
-mod config;
 
 use audio::{AudioManager, WindowsAudioManager};
 use serial::SerialManager;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc;
-use types::{
-    AudioSession, ChannelMapping, ConnectionStatus, MixerChannel,
-    SerialPortInfo,
-};
+use types::{AudioSession, ChannelMapping, ConnectionStatus, MixerChannel, SerialPortInfo};
 
 struct AppState {
     serial_manager: Arc<SerialManager>,
@@ -138,8 +135,7 @@ async fn save_channel_mapping(
     mappings.push(mapping.clone());
 
     // Save to config
-    config::save_channel_mappings(&mappings, &app_handle)
-        .map_err(|e| e.to_string())?;
+    config::save_channel_mappings(&mappings, &app_handle).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -154,8 +150,7 @@ async fn clear_channel_mapping(
     mappings.retain(|m| m.channel_id != channel_id);
 
     // Save to config
-    config::save_channel_mappings(&mappings, &app_handle)
-        .map_err(|e| e.to_string())?;
+    config::save_channel_mappings(&mappings, &app_handle).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -192,8 +187,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
 
             // Load saved channel mappings
-            let channel_mappings = config::load_channel_mappings(&app_handle)
-                .unwrap_or_default();
+            let channel_mappings = config::load_channel_mappings(&app_handle).unwrap_or_default();
 
             let app_state = AppState {
                 serial_manager: Arc::new(SerialManager::new()),
@@ -206,8 +200,8 @@ pub fn run() {
             // Setup system tray
             #[cfg(desktop)]
             {
-                use tauri::tray::{TrayIconBuilder, TrayIconEvent};
                 use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 
                 let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
                 let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;

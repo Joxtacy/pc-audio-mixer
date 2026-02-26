@@ -1,8 +1,8 @@
+use crate::audio::AudioManager;
+use crate::types::AudioSession;
 #[cfg(target_os = "macos")]
 use anyhow::{anyhow, Result};
 use std::process::Command;
-use crate::audio::AudioManager;
-use crate::types::AudioSession;
 
 pub struct MacOSAudioManager;
 
@@ -37,7 +37,9 @@ impl MacOSAudioManager {
         }
 
         let volume_str = String::from_utf8_lossy(&output.stdout);
-        let volume = volume_str.trim().parse::<i32>()
+        let volume = volume_str
+            .trim()
+            .parse::<i32>()
             .map_err(|e| anyhow!("Failed to parse volume: {}", e))?;
 
         Ok(volume)
@@ -65,18 +67,12 @@ impl AudioManager for MacOSAudioManager {
 
         for (name, bundle_id) in common_apps {
             // Check if app is running using ps or other method
-            let output = Command::new("pgrep")
-                .arg("-f")
-                .arg(bundle_id)
-                .output();
+            let output = Command::new("pgrep").arg("-f").arg(bundle_id).output();
 
             if let Ok(output) = output {
                 if output.status.success() && !output.stdout.is_empty() {
                     let pid_str = String::from_utf8_lossy(&output.stdout);
-                    if let Ok(pid) = pid_str.trim().lines().next()
-                        .unwrap_or("0")
-                        .parse::<u32>()
-                    {
+                    if let Ok(pid) = pid_str.trim().lines().next().unwrap_or("0").parse::<u32>() {
                         sessions.push(AudioSession {
                             process_id: pid,
                             process_name: format!("{}.app", name),
@@ -111,8 +107,10 @@ impl AudioManager for MacOSAudioManager {
         // 3. Custom Core Audio solution (complex)
 
         // For now, we'll just log the intent
-        println!("macOS: Would set volume for PID {} to {}% (not supported natively)",
-                 process_id, volume);
+        println!(
+            "macOS: Would set volume for PID {} to {}% (not supported natively)",
+            process_id, volume
+        );
 
         // Return success to prevent UI errors
         Ok(())

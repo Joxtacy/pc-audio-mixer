@@ -1,6 +1,6 @@
-use anyhow::Result;
 use crate::audio::AudioManager;
 use crate::types::AudioSession;
+use anyhow::Result;
 
 pub struct StubAudioManager;
 
@@ -32,7 +32,10 @@ impl AudioManager for StubAudioManager {
     }
 
     fn set_app_volume(&self, process_id: u32, volume: f32) -> Result<()> {
-        println!("Stub: Setting volume for process {} to {}%", process_id, volume);
+        println!(
+            "Stub: Setting volume for process {} to {}%",
+            process_id, volume
+        );
         Ok(())
     }
 
