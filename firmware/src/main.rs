@@ -35,6 +35,7 @@ use bsp::hal::{
 use nb::block;
 // Import embedded-hal v0.2 traits
 use embedded_hal::adc::OneShot;
+use embedded_hal::digital::v2::{OutputPin, StatefulOutputPin};
 
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::{SerialPort, USB_CLASS_CDC};
@@ -47,6 +48,28 @@ struct PotentiometerData {
     pot1: u16,
     pot2: u16,
     pot3: u16,
+}
+
+/// Drives the pin high
+fn pin_on<P: OutputPin>(led: &mut P) -> Result<(), P::Error> {
+    led.set_high()
+}
+
+/// Drives the pin low
+fn pin_off<P: OutputPin>(led: &mut P) -> Result<(), P::Error> {
+    led.set_low()
+}
+
+/// Toggles the state of the pin
+fn pin_toggle<P: StatefulOutputPin>(led: &mut P) -> Result<(), P::Error>
+where
+    P::Error: core::fmt::Debug,
+{
+    if led.is_set_high().unwrap_or(false) {
+        led.set_low()
+    } else {
+        led.set_high()
+    }
 }
 
 #[entry]
@@ -99,6 +122,11 @@ fn main() -> ! {
         sio.gpio_bank0,
         &mut pac.RESETS,
     );
+
+    // Turn on the onboard LED to indicate the Pico is running
+    let mut led_pin = pins.led.into_push_pull_output();
+    pin_on(&mut led_pin).unwrap();
+    debug!("LED turned on");
 
     // Initialize the ADC
     let mut adc = Adc::new(pac.ADC, &mut pac.RESETS);
