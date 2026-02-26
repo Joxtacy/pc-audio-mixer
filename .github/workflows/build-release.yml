@@ -45,16 +45,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9
+        run_install: false
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
-
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v3
-      with:
-        version: 8
-        run_install: false
+        node-version: 'lts/*'
+        cache: 'pnpm'
 
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
@@ -76,19 +77,22 @@ jobs:
           libayatana-appindicator3-dev \
           librsvg2-dev \
           libasound2-dev \
-          libssl-dev
+          libssl-dev \
+          patchelf
 
     - name: Install frontend dependencies
       working-directory: ./mixer-gui
       run: pnpm install
 
     - name: Build Tauri application
-      working-directory: ./mixer-gui
+      uses: tauri-apps/tauri-action@v0
       env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      run: |
-        pnpm tauri build --target ${{ matrix.platform.rust-target }} --bundles ${{ matrix.platform.bundles }}
+      with:
+        projectPath: './mixer-gui'
+        args: --target ${{ matrix.platform.rust-target }}
 
     - name: Generate artifact name
       id: artifact
