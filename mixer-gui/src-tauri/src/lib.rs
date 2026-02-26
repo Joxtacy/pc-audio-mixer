@@ -209,7 +209,7 @@ pub fn run() {
 
                 let menu = Menu::with_items(app, &[&show, &hide, &quit])?;
 
-                let tray = TrayIconBuilder::new()
+                let _tray = TrayIconBuilder::new()
                     .menu(&menu)
                     .tooltip("PC Audio Mixer")
                     .on_menu_event(|app, event| match event.id.as_ref() {
