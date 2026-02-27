@@ -22,8 +22,8 @@ usbd-serial = "0.2.2"
 
 # For JSON serialization of potentiometer data
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-serde-json-core = "0.5.1"
-heapless = { version = "0.8", features = ["serde"] }
+serde-json-core = "0.6"
+heapless = { version = "0.9", features = ["serde"] }
 nb = "1.1"
 
 # cargo build/run
@@ -77,4 +77,3 @@ debug-assertions = false
 incremental = false
 lto = 'fat'
 opt-level = 3
-
