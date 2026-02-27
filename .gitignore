@@ -7,6 +7,7 @@ Cargo.lock
 # Firmware specific
 firmware/target/
 firmware/Cargo.lock
+*.uf2
 
 # Tauri
 mixer-gui/src-tauri/target/

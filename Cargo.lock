@@ -1086,6 +1086,7 @@ dependencies = [
  "embedded-hal 0.2.7",
  "heapless 0.9.2",
  "nb 1.1.0",
+ "panic-halt",
  "panic-probe",
  "rp-pico",
  "serde",
@@ -2752,6 +2753,12 @@ dependencies = [
  "libc",
  "system-deps",
 ]
+
+[[package]]
+name = "panic-halt"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a513e167849a384b7f9b746e517604398518590a9142f4846a32e3c2a4de7b11"
 
 [[package]]
 name = "panic-probe"

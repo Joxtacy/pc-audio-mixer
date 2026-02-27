@@ -4,14 +4,27 @@ name = "firmware"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
+[[bin]]
+name = "firmware"
+path = "src/main.rs"
+
+[[bin]]
+name = "main_mcp3008"
+path = "src/main_mcp3008.rs"
+
+[features]
+# Enable this feature when using probe-rs for debugging
+probe = []
+
 [dependencies]
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
-embedded-hal = { version = "0.2.7", features = ["unproven"] }
+embedded-hal = { version = "0.2", features = ["unproven"] }
 
 defmt = "1"
 defmt-rtt = "1"
 panic-probe = { version = "1", features = ["print-defmt"] }
+panic-halt = "1"
 
 # We're using a Pico by default on this template
 rp-pico = "0.9"

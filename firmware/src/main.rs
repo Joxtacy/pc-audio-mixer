@@ -14,21 +14,29 @@
 #![no_std]
 #![no_main]
 
-use bsp::entry;
+// The macro for our start-up function
+use rp_pico::entry;
+
+// Use panic_probe when debugging with probe, panic_halt otherwise
+#[cfg(feature = "probe")]
 use defmt::*;
+#[cfg(feature = "probe")]
 use defmt_rtt as _;
+#[cfg(feature = "probe")]
 use panic_probe as _;
 
-// Provide an alias for our BSP so we can switch targets quickly.
-use rp_pico as bsp;
+#[cfg(not(feature = "probe"))]
+use panic_halt as _;
 
-use bsp::hal::{
+// Peripheral Access Crate
+use rp_pico::hal::pac;
+
+// Hardware Abstraction Layer
+use rp_pico::hal;
+
+use hal::{
     adc::{Adc, AdcPin},
-    clocks::{init_clocks_and_plls, Clock},
-    pac,
-    sio::Sio,
-    usb::UsbBus,
-    watchdog::Watchdog,
+    clocks::init_clocks_and_plls,
 };
 
 // Import nb trait for non-blocking operations
@@ -37,8 +45,12 @@ use nb::block;
 use embedded_hal::adc::OneShot;
 use embedded_hal::digital::v2::{OutputPin, StatefulOutputPin};
 
+use usb_device::device::StringDescriptors;
 use usb_device::{class_prelude::*, prelude::*};
-use usbd_serial::{SerialPort, USB_CLASS_CDC};
+use usbd_serial::SerialPort;
+
+use core::fmt::Write;
+use heapless::String;
 
 use serde::Serialize;
 
@@ -74,19 +86,21 @@ where
 
 #[entry]
 fn main() -> ! {
+    #[cfg(feature = "probe")]
     info!("PC Audio Mixer starting...");
 
     // Take ownership of the device peripherals
     let mut pac = pac::Peripherals::take().unwrap();
     let core = pac::CorePeripherals::take().unwrap();
 
-    // Set up the watchdog driver
-    let mut watchdog = Watchdog::new(pac.WATCHDOG);
+    // Set up the watchdog driver - needed by the clock setup code
+    let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
 
+    let clock_speed = rp_pico::XOSC_CRYSTAL_FREQ;
+    let clock_speed = 12_000_000u32;
     // Configure the clocks
-    let external_xtal_freq_hz = 12_000_000u32;
     let clocks = init_clocks_and_plls(
-        external_xtal_freq_hz,
+        clock_speed,
         pac.XOSC,
         pac.CLOCKS,
         pac.PLL_SYS,
@@ -97,8 +111,10 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
+    // let _timer = hal::Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
+
     // Set up the USB driver
-    let usb_bus = UsbBusAllocator::new(UsbBus::new(
+    let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
         pac.USBCTRL_REGS,
         pac.USBCTRL_DPRAM,
         clocks.usb_clock,
@@ -106,17 +122,22 @@ fn main() -> ! {
         &mut pac.RESETS,
     ));
 
-    // Set up the USB Communications Class Device driver (CDC/Serial)
+    // Set up the USB Communications Class Device driver
     let mut serial = SerialPort::new(&usb_bus);
 
     // Create a USB device with a fake VID and PID
     let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
-        .device_class(USB_CLASS_CDC)
+        .strings(&[StringDescriptors::default()
+            .manufacturer("Fake company")
+            .product("Serial port")
+            .serial_number("TEST")])
+        .unwrap()
+        .device_class(2) // from: https://www.usb.org/defined-class-codes
         .build();
 
     // Set up the GPIO pins
-    let sio = Sio::new(pac.SIO);
-    let pins = bsp::Pins::new(
+    let sio = hal::Sio::new(pac.SIO);
+    let pins = rp_pico::Pins::new(
         pac.IO_BANK0,
         pac.PADS_BANK0,
         sio.gpio_bank0,
@@ -126,6 +147,8 @@ fn main() -> ! {
     // Turn on the onboard LED to indicate the Pico is running
     let mut led_pin = pins.led.into_push_pull_output();
     pin_on(&mut led_pin).unwrap();
+
+    #[cfg(feature = "probe")]
     debug!("LED turned on");
 
     // Initialize the ADC
@@ -137,43 +160,63 @@ fn main() -> ! {
     let mut adc_pin_1 = AdcPin::new(pins.gpio27.into_floating_input()).unwrap();
     let mut adc_pin_2 = AdcPin::new(pins.gpio28.into_floating_input()).unwrap();
 
-    // Set up timing for regular readings
-    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
+    // Don't use cortex_m delay - it blocks USB!
 
-    info!("Setup complete, starting main loop...");
-
+    let mut said_hello = false;
+    let mut counter = 0u32;
     loop {
-        // Poll the USB device
+        // A welcome message at the beginning
+        if !said_hello {
+            said_hello = true;
+            let _ = serial.write(b"Hello, World!\r\n");
+        }
+
+        // Check for new data
         if usb_dev.poll(&mut [&mut serial]) {
-            // Handle any USB events
+            let mut buf = [0u8; 64];
+            match serial.read(&mut buf) {
+                Err(_e) => {
+                    // Do nothing
+                }
+                Ok(0) => {
+                    // Do nothing
+                }
+                Ok(count) => {
+                    // Convert to upper case
+                    buf.iter_mut().take(count).for_each(|b| {
+                        b.make_ascii_uppercase();
+                    });
+                    // Send back to the host
+                    let mut wr_ptr = &buf[..count];
+                    while !wr_ptr.is_empty() {
+                        match serial.write(wr_ptr) {
+                            Ok(len) => wr_ptr = &wr_ptr[len..],
+                            // On error, just drop unwritten data.
+                            Err(_) => break,
+                        };
+                    }
+                }
+            }
         }
 
-        // Read all potentiometer values
-        let pot1_raw: u16 = block!(adc.read(&mut adc_pin_0)).unwrap();
-        let pot2_raw: u16 = block!(adc.read(&mut adc_pin_1)).unwrap();
-        let pot3_raw: u16 = block!(adc.read(&mut adc_pin_2)).unwrap();
+        // Send JSON data periodically (roughly every 10000 polls for ~50ms at USB polling rate)
+        if counter.is_multiple_of(10000) {
+            // Read potentiometers
+            let pot1_raw: u16 = block!(adc.read(&mut adc_pin_0)).unwrap_or(0);
+            let pot2_raw: u16 = block!(adc.read(&mut adc_pin_1)).unwrap_or(0);
+            let pot3_raw: u16 = block!(adc.read(&mut adc_pin_2)).unwrap_or(0);
 
-        // Create the data structure
-        let pot_data = PotentiometerData {
-            pot1: pot1_raw,
-            pot2: pot2_raw,
-            pot3: pot3_raw,
-        };
-
-        // Serialize to JSON string
-        if let Ok(json_string) = serde_json_core::to_string::<_, 256>(&pot_data) {
-            let mut full_message = json_string;
-            // Add newline for easier parsing on PC side
-            full_message.push('\n').ok();
-
-            // Send over USB serial
-            let _ = serial.write(full_message.as_bytes());
-
-            info!("Sent: {}", full_message.as_str());
+            // Create JSON manually to avoid heap allocation
+            let mut json: String<64> = String::new();
+            let _ = writeln!(
+                &mut json,
+                "{{\"pot1\":{},\"pot2\":{},\"pot3\":{}}}",
+                pot1_raw, pot2_raw, pot3_raw
+            );
+            let _ = serial.write(json.as_bytes());
         }
 
-        // Wait 50ms between readings (20Hz update rate)
-        // This provides smooth control without overwhelming the USB connection
-        delay.delay_ms(50);
+        counter = counter.wrapping_add(1);
+        // No delay - just keep polling USB!
     }
 }
