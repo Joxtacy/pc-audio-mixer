@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "pc-audio-mixer-firmware"
+name = "firmware"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
@@ -77,3 +77,4 @@ debug-assertions = false
 incremental = false
 lto = 'fat'
 opt-level = 3
+

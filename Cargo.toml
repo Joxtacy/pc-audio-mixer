@@ -1,12 +1,10 @@
 [workspace]
 resolver = "2"
-members = [
-    "firmware",
-    "mixer-gui/src-tauri"
-]
-exclude = ["mixer-gui"]
+members = ["firmware", "gui/src-tauri"]
+exclude = ["gui"]
 
 [workspace.package]
 edition = "2021"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
+
