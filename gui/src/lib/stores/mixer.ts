@@ -59,9 +59,12 @@ export const channelValues = derived(
                 // Get actual pot value
                 const potKey = `pot${channel.id}` as keyof PotentiometerData;
                 const rawValue = $potData[potKey] || 0;
+                const percentage = (rawValue / 4095) * 100;
+                // Round to nearest 2%
+                const roundedValue = Math.round(percentage / 2) * 2;
                 return {
                     ...channel,
-                    value: Math.round((rawValue / 4095) * 100), // Convert to percentage and round to whole number
+                    value: roundedValue,
                 };
             }
             return channel;

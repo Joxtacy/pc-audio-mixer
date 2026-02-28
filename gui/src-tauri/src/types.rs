@@ -9,10 +9,16 @@ pub struct PotentiometerData {
 
 impl PotentiometerData {
     pub fn to_percentages(&self) -> (f32, f32, f32) {
+        // Helper function to round to nearest 2%
+        let round_to_2 = |val: f32| -> f32 {
+            let percentage = (val / 4095.0) * 100.0;
+            (percentage / 2.0).round() * 2.0
+        };
+
         (
-            ((self.pot1 as f32 / 4095.0) * 100.0).round(),
-            ((self.pot2 as f32 / 4095.0) * 100.0).round(),
-            ((self.pot3 as f32 / 4095.0) * 100.0).round(),
+            round_to_2(self.pot1 as f32),
+            round_to_2(self.pot2 as f32),
+            round_to_2(self.pot3 as f32),
         )
     }
 }
