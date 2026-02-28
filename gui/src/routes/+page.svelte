@@ -2,22 +2,14 @@
     import { onMount } from 'svelte';
     import { initializeMixer } from '$lib/stores/mixer';
     import StatusBar from '$lib/components/StatusBar.svelte';
-    import AppSelector from '$lib/components/AppSelector.svelte';
     import Mixer from '$lib/components/Mixer.svelte';
 
-    let mixer: Mixer;
     let isInitialized = false;
 
     onMount(async () => {
         await initializeMixer();
         isInitialized = true;
     });
-
-    function handleDragStart(app: any) {
-        if (mixer) {
-            mixer.setDraggedApp(app);
-        }
-    }
 </script>
 
 <main class="app">
@@ -29,8 +21,7 @@
     <div class="app-content">
         {#if isInitialized}
             <StatusBar />
-            <AppSelector onDragStart={handleDragStart} />
-            <Mixer bind:this={mixer} />
+            <Mixer />
         {:else}
             <div class="loading">
                 <div class="spinner"></div>

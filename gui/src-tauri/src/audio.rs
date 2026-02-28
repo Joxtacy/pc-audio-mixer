@@ -11,20 +11,14 @@ pub trait AudioManager: Send + Sync {
 #[cfg(target_os = "windows")]
 pub mod windows_impl;
 
-#[cfg(target_os = "macos")]
-pub mod macos_impl;
-
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(not(target_os = "windows"))]
 pub mod stub_impl;
 
 // Platform-specific type aliases
 #[cfg(target_os = "windows")]
 pub type PlatformAudioManager = windows_impl::WindowsAudioManager;
 
-#[cfg(target_os = "macos")]
-pub type PlatformAudioManager = macos_impl::MacOSAudioManager;
-
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(not(target_os = "windows"))]
 pub type PlatformAudioManager = stub_impl::StubAudioManager;
 
 // Keep backward compatibility

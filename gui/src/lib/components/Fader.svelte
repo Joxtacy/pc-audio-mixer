@@ -3,52 +3,18 @@
 
     export let channel: MixerChannel;
     export let value: number = 0;
-    export let onVolumeChange: (value: number) => void = () => {};
-    export let onDrop: (event: DragEvent) => void = () => {};
-    export let onClear: () => void = () => {};
-
-    let isDraggingOver = false;
-
-    function handleSliderChange(event: Event) {
-        const target = event.target as HTMLInputElement;
-        const newValue = parseFloat(target.value);
-        onVolumeChange(newValue);
-    }
-
-    function handleDragOver(event: DragEvent) {
-        event.preventDefault();
-        isDraggingOver = true;
-    }
-
-    function handleDragLeave() {
-        isDraggingOver = false;
-    }
-
-    function handleDrop(event: DragEvent) {
-        event.preventDefault();
-        isDraggingOver = false;
-        onDrop(event);
-    }
 
     $: faderHeight = 100 - value;
 </script>
 
 <div
     class="fader-container"
-    class:dragging-over={isDraggingOver}
-    on:dragover={handleDragOver}
-    on:dragleave={handleDragLeave}
-    on:drop={handleDrop}
     role="region"
     aria-label="Channel {channel.id} fader"
 >
     <div class="fader-header">
         <span class="channel-number">CH {channel.id}</span>
-        {#if channel.is_physical}
-            <span class="channel-type">Physical</span>
-        {:else}
-            <span class="channel-type">Virtual</span>
-        {/if}
+        <span class="channel-type">Physical</span>
     </div>
 
     <div class="fader-body">
@@ -62,9 +28,8 @@
                 max="100"
                 step="1"
                 {value}
-                on:input={handleSliderChange}
                 class="fader-slider"
-                disabled={channel.is_physical}
+                disabled
             />
         </div>
 
@@ -78,20 +43,9 @@
     </div>
 
     <div class="fader-footer">
-        {#if channel.mapped_app}
-            <div class="mapped-app">
-                <span class="app-name">{channel.mapped_app}</span>
-                {#if !channel.is_physical}
-                    <button class="clear-btn" on:click={onClear}>×</button>
-                {/if}
-            </div>
-        {:else if !channel.is_physical}
-            <div class="drop-zone">Drop app here</div>
-        {:else}
-            <div class="pot-indicator">
-                Pot {channel.id}
-            </div>
-        {/if}
+        <div class="pot-indicator">
+            Pot {channel.id}
+        </div>
     </div>
 </div>
 
@@ -107,11 +61,6 @@
         margin: 0 5px;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
         transition: all 0.3s ease;
-    }
-
-    .fader-container.dragging-over {
-        background: #3a3a3a;
-        border: 2px solid #4a9eff;
     }
 
     .fader-header {
@@ -204,54 +153,6 @@
         align-items: center;
         justify-content: center;
         margin-top: 10px;
-    }
-
-    .mapped-app {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        padding: 5px 10px;
-        background: #1a1a1a;
-        border-radius: 4px;
-        width: 100%;
-    }
-
-    .app-name {
-        font-size: 11px;
-        color: #fff;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        flex: 1;
-    }
-
-    .clear-btn {
-        background: #ff4444;
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 16px;
-        height: 16px;
-        font-size: 12px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background 0.2s;
-    }
-
-    .clear-btn:hover {
-        background: #ff6666;
-    }
-
-    .drop-zone {
-        padding: 8px;
-        border: 2px dashed #444;
-        border-radius: 4px;
-        font-size: 10px;
-        color: #666;
-        text-align: center;
-        width: 100%;
     }
 
     .pot-indicator {

@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
-import { invoke, type Event } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type Event } from '@tauri-apps/api/event';
 
 // Types
 export interface PotentiometerData {
@@ -27,15 +27,6 @@ export interface MixerChannel {
     id: number;
     value: number;
     is_physical: boolean;
-    mapped_app: string | null;
-    app_process_id: number | null;
-}
-
-export interface ChannelMapping {
-    channel_id: number;
-    process_id: number | null;
-    process_name: string | null;
-    is_master: boolean;
 }
 
 export interface SerialPortInfo {
@@ -56,10 +47,8 @@ export const connectionStatus = writable<ConnectionStatus>({
     error: null,
 });
 
-export const audioSessions = writable<AudioSession[]>([]);
 export const mixerChannels = writable<MixerChannel[]>([]);
 export const availablePorts = writable<SerialPortInfo[]>([]);
-export const channelMappings = writable<ChannelMapping[]>([]);
 
 // Derived stores
 export const channelValues = derived(
@@ -72,7 +61,7 @@ export const channelValues = derived(
                 const rawValue = $potData[potKey] || 0;
                 return {
                     ...channel,
-                    value: (rawValue / 4095) * 100, // Convert to percentage
+                    value: Math.round((rawValue / 4095) * 100), // Convert to percentage and round to whole number
                 };
             }
             return channel;
@@ -92,10 +81,6 @@ export async function initializeListeners() {
         connectionStatus.set(event.payload);
     });
 
-    // Listen for audio session changes
-    await listen<AudioSession[]>('audio-sessions', (event: Event<AudioSession[]>) => {
-        audioSessions.set(event.payload);
-    });
 }
 
 // API Functions
@@ -140,61 +125,11 @@ export async function disconnectSerial(): Promise<void> {
     }
 }
 
-export async function getAudioSessions(): Promise<AudioSession[]> {
-    try {
-        const sessions = await invoke<AudioSession[]>('get_audio_sessions');
-        audioSessions.set(sessions);
-        return sessions;
-    } catch (error) {
-        console.error('Failed to get audio sessions:', error);
-        return [];
-    }
-}
-
-export async function setAppVolume(processId: number, volume: number): Promise<void> {
-    try {
-        await invoke('set_app_volume', { processId, volume });
-    } catch (error) {
-        console.error('Failed to set app volume:', error);
-    }
-}
-
 export async function setMasterVolume(volume: number): Promise<void> {
     try {
         await invoke('set_master_volume', { volume });
     } catch (error) {
         console.error('Failed to set master volume:', error);
-    }
-}
-
-export async function saveChannelMapping(mapping: ChannelMapping): Promise<void> {
-    try {
-        await invoke('save_channel_mapping', { mapping });
-        await loadChannelMappings();
-        await loadMixerChannels();
-    } catch (error) {
-        console.error('Failed to save channel mapping:', error);
-    }
-}
-
-export async function clearChannelMapping(channelId: number): Promise<void> {
-    try {
-        await invoke('clear_channel_mapping', { channelId });
-        await loadChannelMappings();
-        await loadMixerChannels();
-    } catch (error) {
-        console.error('Failed to clear channel mapping:', error);
-    }
-}
-
-export async function loadChannelMappings(): Promise<ChannelMapping[]> {
-    try {
-        const mappings = await invoke<ChannelMapping[]>('get_channel_mappings');
-        channelMappings.set(mappings);
-        return mappings;
-    } catch (error) {
-        console.error('Failed to load channel mappings:', error);
-        return [];
     }
 }
 
@@ -213,15 +148,8 @@ export async function loadMixerChannels(): Promise<MixerChannel[]> {
 export async function initializeMixer() {
     await initializeListeners();
     await loadMixerChannels();
-    await loadChannelMappings();
-    await getAudioSessions();
     await listSerialPorts();
 
     // Try auto-connect
     await connectSerial();
-
-    // Refresh audio sessions periodically
-    setInterval(async () => {
-        await getAudioSessions();
-    }, 5000);
 }

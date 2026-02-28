@@ -5,15 +5,14 @@ mod types;
 
 use audio::{AudioManager, WindowsAudioManager};
 use serial::SerialManager;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc;
-use types::{AudioSession, ChannelMapping, ConnectionStatus, MixerChannel, SerialPortInfo};
+use types::{AudioSession, ConnectionStatus, MixerChannel, SerialPortInfo};
 
 struct AppState {
     serial_manager: Arc<SerialManager>,
     audio_manager: Arc<dyn AudioManager>,
-    channel_mappings: Arc<Mutex<Vec<ChannelMapping>>>,
 }
 
 #[tauri::command]
@@ -44,7 +43,6 @@ async fn connect_serial(
 
         // Spawn task to emit pot data events
         let app_handle_clone = app_handle.clone();
-        let channel_mappings = state.channel_mappings.clone();
         let audio_manager = state.audio_manager.clone();
 
         tokio::spawn(async move {
@@ -52,20 +50,9 @@ async fn connect_serial(
                 // Emit raw pot data
                 let _ = app_handle_clone.emit("pot-data", &data);
 
-                // Apply volume changes based on mappings
-                let mappings = channel_mappings.lock().unwrap().clone();
-                let (pot1, pot2, pot3) = data.to_percentages();
-                let pot_values = vec![pot1, pot2, pot3];
-
-                for (idx, pot_value) in pot_values.iter().enumerate() {
-                    if let Some(mapping) = mappings.iter().find(|m| m.channel_id == idx + 1) {
-                        if mapping.is_master {
-                            let _ = audio_manager.set_master_volume(*pot_value);
-                        } else if let Some(process_id) = mapping.process_id {
-                            let _ = audio_manager.set_app_volume(process_id, *pot_value);
-                        }
-                    }
-                }
+                // Use pot1 to control master volume directly
+                let (pot1, _pot2, _pot3) = data.to_percentages();
+                let _ = audio_manager.set_master_volume(pot1);
             }
         });
     }
@@ -121,58 +108,15 @@ async fn get_master_volume(state: State<'_, AppState>) -> Result<f32, String> {
 }
 
 #[tauri::command]
-async fn save_channel_mapping(
-    state: State<'_, AppState>,
-    mapping: ChannelMapping,
-    app_handle: AppHandle,
-) -> Result<(), String> {
-    let mut mappings = state.channel_mappings.lock().unwrap();
-
-    // Remove existing mapping for this channel
-    mappings.retain(|m| m.channel_id != mapping.channel_id);
-
-    // Add new mapping
-    mappings.push(mapping.clone());
-
-    // Save to config
-    config::save_channel_mappings(&mappings, &app_handle).map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn clear_channel_mapping(
-    state: State<'_, AppState>,
-    channel_id: usize,
-    app_handle: AppHandle,
-) -> Result<(), String> {
-    let mut mappings = state.channel_mappings.lock().unwrap();
-    mappings.retain(|m| m.channel_id != channel_id);
-
-    // Save to config
-    config::save_channel_mappings(&mappings, &app_handle).map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn get_channel_mappings(state: State<'_, AppState>) -> Result<Vec<ChannelMapping>, String> {
-    Ok(state.channel_mappings.lock().unwrap().clone())
-}
-
-#[tauri::command]
-async fn get_mixer_channels(state: State<'_, AppState>) -> Result<Vec<MixerChannel>, String> {
-    let mappings = state.channel_mappings.lock().unwrap().clone();
+async fn get_mixer_channels(_state: State<'_, AppState>) -> Result<Vec<MixerChannel>, String> {
     let mut channels = Vec::new();
 
-    for i in 1..=8 {
-        let mapping = mappings.iter().find(|m| m.channel_id == i);
+    // Only return 3 physical channels
+    for i in 1..=3 {
         channels.push(MixerChannel {
             id: i,
             value: 0.0,
-            is_physical: i <= 3,
-            mapped_app: mapping.and_then(|m| m.process_name.clone()),
-            app_process_id: mapping.and_then(|m| m.process_id),
+            is_physical: true,
         });
     }
 
@@ -186,13 +130,9 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-            // Load saved channel mappings
-            let channel_mappings = config::load_channel_mappings(&app_handle).unwrap_or_default();
-
             let app_state = AppState {
                 serial_manager: Arc::new(SerialManager::new()),
                 audio_manager: Arc::new(WindowsAudioManager::new()),
-                channel_mappings: Arc::new(Mutex::new(channel_mappings)),
             };
 
             app.manage(app_state);
@@ -270,9 +210,6 @@ pub fn run() {
             set_app_volume,
             set_master_volume,
             get_master_volume,
-            save_channel_mapping,
-            clear_channel_mapping,
-            get_channel_mappings,
             get_mixer_channels,
         ])
         .run(tauri::generate_context!())

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
-use crate::types::{AppConfig, ChannelMapping};
+use crate::types::AppConfig;
 
 const CONFIG_FILE_NAME: &str = "config.json";
 
@@ -22,7 +22,6 @@ pub fn load_config(app_handle: &AppHandle) -> Result<AppConfig> {
     if !config_path.exists() {
         // Return default config if file doesn't exist
         return Ok(AppConfig {
-            channel_mappings: Vec::new(),
             start_with_windows: false,
             minimize_to_tray: true,
             auto_connect: true,
@@ -40,19 +39,6 @@ pub fn save_config(app_handle: &AppHandle, config: &AppConfig) -> Result<()> {
     let config_path = get_config_path(app_handle)?;
     let config_str = serde_json::to_string_pretty(config)?;
     fs::write(config_path, config_str)?;
-
-    Ok(())
-}
-
-pub fn load_channel_mappings(app_handle: &AppHandle) -> Result<Vec<ChannelMapping>> {
-    let config = load_config(app_handle)?;
-    Ok(config.channel_mappings)
-}
-
-pub fn save_channel_mappings(mappings: &[ChannelMapping], app_handle: &AppHandle) -> Result<()> {
-    let mut config = load_config(app_handle)?;
-    config.channel_mappings = mappings.to_vec();
-    save_config(app_handle, &config)?;
 
     Ok(())
 }
