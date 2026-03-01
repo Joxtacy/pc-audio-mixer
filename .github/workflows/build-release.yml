@@ -79,6 +79,7 @@ jobs:
             librsvg2-dev \
             libasound2-dev \
             libssl-dev \
+            libudev-dev \
             patchelf
 
       - name: Install frontend dependencies
