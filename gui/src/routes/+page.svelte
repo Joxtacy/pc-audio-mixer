@@ -3,6 +3,7 @@
     import { initializeMixer } from '$lib/stores/mixer';
     import StatusBar from '$lib/components/StatusBar.svelte';
     import Mixer from '$lib/components/Mixer.svelte';
+    import ApplicationList from '$lib/components/ApplicationList.svelte';
 
     let isInitialized = false;
 
@@ -21,7 +22,14 @@
     <div class="app-content">
         {#if isInitialized}
             <StatusBar />
-            <Mixer />
+            <div class="main-layout">
+                <div class="mixer-section">
+                    <Mixer />
+                </div>
+                <div class="sidebar">
+                    <ApplicationList />
+                </div>
+            </div>
         {:else}
             <div class="loading">
                 <div class="spinner"></div>
@@ -102,5 +110,30 @@
     .loading p {
         margin-top: 20px;
         font-size: 14px;
+    }
+
+    .main-layout {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 20px;
+        margin-top: 20px;
+    }
+
+    .mixer-section {
+        min-width: 0;
+    }
+
+    .sidebar {
+        min-width: 0;
+    }
+
+    @media (max-width: 1000px) {
+        .main-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+            margin-top: 20px;
+        }
     }
 </style>

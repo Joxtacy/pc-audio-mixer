@@ -49,6 +49,7 @@ export const connectionStatus = writable<ConnectionStatus>({
 
 export const mixerChannels = writable<MixerChannel[]>([]);
 export const availablePorts = writable<SerialPortInfo[]>([]);
+export const audioSessions = writable<AudioSession[]>([]);
 
 // Derived stores
 export const channelValues = derived(
@@ -84,6 +85,18 @@ export async function initializeListeners() {
         connectionStatus.set(event.payload);
     });
 
+    // Listen for audio session updates
+    await listen<AudioSession[]>('audio-sessions-updated', (event: Event<AudioSession[]>) => {
+        try {
+            if (event.payload && Array.isArray(event.payload)) {
+                audioSessions.set(event.payload);
+            } else {
+                console.error('Invalid audio sessions data received:', event.payload);
+            }
+        } catch (error) {
+            console.error('Error handling audio-sessions-updated event:', error);
+        }
+    });
 }
 
 // API Functions
@@ -147,11 +160,23 @@ export async function loadMixerChannels(): Promise<MixerChannel[]> {
     }
 }
 
+export async function getAudioSessions(): Promise<AudioSession[]> {
+    try {
+        const sessions = await invoke<AudioSession[]>('get_audio_sessions');
+        audioSessions.set(sessions);
+        return sessions;
+    } catch (error) {
+        console.error('Failed to get audio sessions:', error);
+        return [];
+    }
+}
+
 // Initialize the mixer on app start
 export async function initializeMixer() {
     await initializeListeners();
     await loadMixerChannels();
     await listSerialPorts();
+    await getAudioSessions();
 
     // Try auto-connect
     await connectSerial();

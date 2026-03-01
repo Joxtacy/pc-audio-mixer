@@ -30,7 +30,7 @@ pub struct MixerChannel {
     pub is_physical: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AudioSession {
     pub process_id: u32,
     pub process_name: String,

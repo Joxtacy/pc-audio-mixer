@@ -32,13 +32,52 @@ impl AudioManager for WindowsAudioManager {
         // that are not fully available in the windows crate.
         // Return mock data for now, similar to the stub implementation.
 
-        Ok(vec![AudioSession {
-            process_id: 1234,
-            process_name: "System Audio".to_string(),
-            display_name: "System Audio".to_string(),
-            volume: 50.0,
-            is_muted: false,
-        }])
+        Ok(vec![
+            // Master Volume as special entry with process_id: 0
+            AudioSession {
+                process_id: 0,
+                process_name: "Master".to_string(),
+                display_name: "Master Volume".to_string(),
+                volume: 75.0,
+                is_muted: false,
+            },
+            // Common applications that would typically have audio
+            AudioSession {
+                process_id: 1234,
+                process_name: "chrome.exe".to_string(),
+                display_name: "Google Chrome".to_string(),
+                volume: 50.0,
+                is_muted: false,
+            },
+            AudioSession {
+                process_id: 5678,
+                process_name: "spotify.exe".to_string(),
+                display_name: "Spotify".to_string(),
+                volume: 65.0,
+                is_muted: false,
+            },
+            AudioSession {
+                process_id: 9012,
+                process_name: "discord.exe".to_string(),
+                display_name: "Discord".to_string(),
+                volume: 80.0,
+                is_muted: false,
+            },
+            AudioSession {
+                process_id: 3456,
+                process_name: "firefox.exe".to_string(),
+                display_name: "Mozilla Firefox".to_string(),
+                volume: 45.0,
+                is_muted: false,
+            },
+            AudioSession {
+                process_id: 7890,
+                process_name: "vlc.exe".to_string(),
+                display_name: "VLC Media Player".to_string(),
+                volume: 90.0,
+                is_muted: false,
+            },
+        ])
     }
 
     fn set_app_volume(&self, process_id: u32, volume: f32) -> Result<()> {

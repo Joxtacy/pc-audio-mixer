@@ -7,12 +7,19 @@ use audio::{AudioManager, WindowsAudioManager};
 use serial::SerialManager;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
+use tokio_util::sync::CancellationToken;
 use types::{AudioSession, ConnectionStatus, MixerChannel, SerialPortInfo};
+
+// Constants for magic numbers
+const AUDIO_SESSION_POLL_INTERVAL_SECS: u64 = 5;
+const MASTER_VOLUME_PROCESS_ID: u32 = 0;
 
 struct AppState {
     serial_manager: Arc<SerialManager>,
     audio_manager: Arc<dyn AudioManager>,
+    cancellation_token: CancellationToken,
+    last_audio_sessions: Arc<RwLock<Vec<AudioSession>>>,
 }
 
 #[tauri::command]
@@ -48,7 +55,9 @@ async fn connect_serial(
         tokio::spawn(async move {
             while let Some(data) = rx.recv().await {
                 // Emit raw pot data
-                let _ = app_handle_clone.emit("pot-data", &data);
+                if let Err(e) = app_handle_clone.emit("pot-data", &data) {
+                    log::error!("Failed to emit pot-data event: {}", e);
+                }
 
                 // Use pot1 to control master volume directly
                 let (pot1, _pot2, _pot3) = data.to_percentages();
@@ -133,6 +142,8 @@ pub fn run() {
             let app_state = AppState {
                 serial_manager: Arc::new(SerialManager::new()),
                 audio_manager: Arc::new(WindowsAudioManager::new()),
+                cancellation_token: CancellationToken::new(),
+                last_audio_sessions: Arc::new(RwLock::new(Vec::new())),
             };
 
             app.manage(app_state);
@@ -195,7 +206,58 @@ pub fn run() {
 
                 // Try auto-connect
                 if let Ok(status) = serial_manager.connect(None) {
-                    let _ = app_handle_clone.emit("connection-status", &status);
+                    if let Err(e) = app_handle_clone.emit("connection-status", &status) {
+                        log::error!("Failed to emit connection-status event: {}", e);
+                    }
+                }
+            });
+
+            // Start audio session polling with proper cancellation
+            let audio_manager = state.audio_manager.clone();
+            let app_handle_clone2 = app_handle.clone();
+            let cancellation_token = state.cancellation_token.clone();
+            let last_sessions_state = state.last_audio_sessions.clone();
+
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = cancellation_token.cancelled() => {
+                            // Clean shutdown
+                            log::info!("Audio session polling task cancelled");
+                            break;
+                        }
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(AUDIO_SESSION_POLL_INTERVAL_SECS)) => {
+                            // Get current audio sessions
+                            match audio_manager.get_audio_sessions() {
+                                Ok(current_sessions) => {
+                                    // Use RwLock for thread-safe comparison and update
+                                    let mut should_emit = false;
+                                    {
+                                        let last = last_sessions_state.read().await;
+                                        if *last != current_sessions {
+                                            should_emit = true;
+                                        }
+                                    }
+
+                                    if should_emit {
+                                        // Update stored sessions atomically
+                                        {
+                                            let mut last = last_sessions_state.write().await;
+                                            *last = current_sessions.clone();
+                                        }
+
+                                        // Emit update event with error handling
+                                        if let Err(e) = app_handle_clone2.emit("audio-sessions-updated", &current_sessions) {
+                                            log::error!("Failed to emit audio-sessions-updated event: {}", e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to get audio sessions: {}", e);
+                                }
+                            }
+                        }
+                    }
                 }
             });
 
