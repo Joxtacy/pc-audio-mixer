@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
 env:
   RUST_BACKTRACE: 1
@@ -18,61 +18,61 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
-    - name: Install Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
-    - name: Run tests
-      run: |
-        cargo test --workspace --all-features
+      - name: Run tests
+        run: |
+          cargo test --workspace --all-features
 
   lint:
     name: Rustfmt and Clippy
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
-    - name: Run rustfmt
-      run: cargo fmt --all -- --check
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
 
-    - name: Run clippy
-      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   frontend-check:
     name: Frontend Type Check
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 9
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 'lts/*'
-        cache: 'pnpm'
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "pnpm"
 
-    - name: Install dependencies
-      working-directory: ./gui
-      run: pnpm install
+      - name: Install dependencies
+        working-directory: ./gui
+        run: pnpm install
 
-    - name: Run type check
-      working-directory: ./gui
-      run: pnpm check
+      - name: Run type check
+        working-directory: ./gui
+        run: pnpm check

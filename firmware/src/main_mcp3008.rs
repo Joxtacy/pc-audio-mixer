@@ -34,9 +34,9 @@ use bsp::hal::{
 
 use embedded_hal::digital::OutputPin;
 use embedded_hal::spi::SpiBus;
+use serde::Serialize;
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::{SerialPort, USB_CLASS_CDC};
-use serde::Serialize;
 
 // Structure to hold potentiometer readings
 #[derive(Serialize)]
@@ -51,21 +51,33 @@ struct PotentiometerData {
     // pot8: u16, // Uncomment for 8th channel
 }
 
-type SpiType = Spi<Enabled, pac::SPI0, (
-    Pin<bsp::hal::gpio::bank0::Gpio16, FunctionSpi, bsp::hal::gpio::PullDown>,
-    Pin<bsp::hal::gpio::bank0::Gpio19, FunctionSpi, bsp::hal::gpio::PullDown>,
-    Pin<bsp::hal::gpio::bank0::Gpio18, FunctionSpi, bsp::hal::gpio::PullDown>,
-)>;
+type SpiType = Spi<
+    Enabled,
+    pac::SPI0,
+    (
+        Pin<bsp::hal::gpio::bank0::Gpio16, FunctionSpi, bsp::hal::gpio::PullDown>,
+        Pin<bsp::hal::gpio::bank0::Gpio19, FunctionSpi, bsp::hal::gpio::PullDown>,
+        Pin<bsp::hal::gpio::bank0::Gpio18, FunctionSpi, bsp::hal::gpio::PullDown>,
+    ),
+>;
 
 struct Mcp3008 {
     spi: SpiType,
-    cs_pin: Pin<bsp::hal::gpio::bank0::Gpio17, bsp::hal::gpio::Output<bsp::hal::gpio::PushPull>, bsp::hal::gpio::PullDown>,
+    cs_pin: Pin<
+        bsp::hal::gpio::bank0::Gpio17,
+        bsp::hal::gpio::Output<bsp::hal::gpio::PushPull>,
+        bsp::hal::gpio::PullDown,
+    >,
 }
 
 impl Mcp3008 {
     fn new(
         spi: SpiType,
-        cs_pin: Pin<bsp::hal::gpio::bank0::Gpio17, bsp::hal::gpio::Output<bsp::hal::gpio::PushPull>, bsp::hal::gpio::PullDown>,
+        cs_pin: Pin<
+            bsp::hal::gpio::bank0::Gpio17,
+            bsp::hal::gpio::Output<bsp::hal::gpio::PushPull>,
+            bsp::hal::gpio::PullDown,
+        >,
     ) -> Self {
         Self { spi, cs_pin }
     }
