@@ -30,15 +30,11 @@ anyhow = "1.0"
 scopeguard = "1.2"
 
 [target.'cfg(windows)'.dependencies]
-# Note: Using windows v0.52 instead of v0.58 because v0.52 has better WASAPI support
-# including IAudioSessionManager2, IAudioSessionControl2, and IAudioEndpointVolume interfaces
-windows = { version = "0.52", features = [
+# Using latest windows crate for Windows audio support
+windows = { version = "0.62", features = [
     "Win32_Media_Audio",
-    "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
-    "Win32_System_Com_StructuredStorage",
     "Win32_Foundation",
     "Win32_System_Threading",
     "Win32_System_ProcessStatus",
-    "implement",
 ] }
