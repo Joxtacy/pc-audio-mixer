@@ -68,6 +68,7 @@ jobs:
         with:
           node-version: "lts/*"
           cache: "pnpm"
+          cache-dependency-path: gui/pnpm-lock.yaml
 
       - name: Install dependencies
         working-directory: ./gui
