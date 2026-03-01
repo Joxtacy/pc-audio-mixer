@@ -1,0 +1,137 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
+	"files": {
+		"includes": [
+			"src/**/*.{js,ts,jsx,tsx,svelte,svelte.js,svelte.ts}",
+			"*.{js,ts,svelte}",
+			"*.config.{js,ts}"
+		],
+		"ignoreUnknown": false
+	},
+	"formatter": {
+		"enabled": true,
+		"formatWithErrors": false,
+		"indentStyle": "tab",
+		"indentWidth": 2,
+		"lineWidth": 100,
+		"lineEnding": "lf",
+		"attributePosition": "auto"
+	},
+	"html": {
+		"experimentalFullSupportEnabled": true,
+		"formatter": {
+			"enabled": true,
+			"indentScriptAndStyle": true,
+			"indentStyle": "tab",
+			"selfCloseVoidElements": "never",
+			"trailingNewline": true
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"a11y": {
+				"recommended": true
+			},
+			"complexity": {
+				"useSimplifiedLogicExpression": "warn",
+				"noExcessiveCognitiveComplexity": "warn"
+			},
+			"correctness": {
+				"noUnusedVariables": "warn",
+				"noUnusedImports": "error",
+				"useExhaustiveDependencies": "warn",
+				"useHookAtTopLevel": "error"
+			},
+			"style": {
+				"noNonNullAssertion": "off",
+				"useConst": "error",
+				"useImportType": "warn",
+				"useBlockStatements": "warn",
+				"useConsistentArrayType": {
+					"level": "error",
+					"options": {
+						"syntax": "shorthand"
+					}
+				},
+				"useNodejsImportProtocol": "off",
+				"noParameterAssign": "warn",
+				"useShorthandFunctionType": "error",
+				"useSelfClosingElements": "error",
+				"useTemplate": "warn"
+			},
+			"suspicious": {
+				"noExplicitAny": "warn",
+				"noConsole": {
+					"level": "off"
+				},
+				"noDebugger": "error"
+			},
+			"security": {
+				"recommended": true
+			},
+			"performance": {
+				"noDelete": "warn",
+				"noAccumulatingSpread": "warn"
+			}
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single",
+			"semicolons": "asNeeded",
+			"trailingCommas": "es5",
+			"arrowParentheses": "asNeeded",
+			"bracketSpacing": true,
+			"bracketSameLine": false
+		},
+		"globals": ["$state", "$derived", "$effect", "$props", "$bindable", "$inspect"]
+	},
+	"css": {
+		"formatter": {
+			"enabled": true,
+			"indentStyle": "tab",
+			"indentWidth": 2,
+			"lineWidth": 100
+		},
+		"linter": {
+			"enabled": true
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["*.svelte", "*.svelte.js", "*.svelte.ts"],
+			"javascript": {
+				"globals": ["$$props", "$$restProps", "$$slots"]
+			},
+			"linter": {
+				"rules": {
+					"correctness": {
+						"noUnusedVariables": "off",
+						"noUnusedImports": "warn",
+						"useExhaustiveDependencies": "off"
+					},
+					"style": {
+						"useConst": "warn"
+					},
+					"a11y": {
+						"useValidAnchor": "warn",
+						"useButtonType": "warn",
+						"noAccessKey": "warn"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["*.config.{js,ts}", "vite.config.{js,ts}"],
+			"linter": {
+				"rules": {
+					"style": {
+						"useNodejsImportProtocol": "off"
+					}
+				}
+			}
+		}
+	]
+}

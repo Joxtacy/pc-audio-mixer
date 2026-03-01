@@ -9,7 +9,11 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "lint": "biome check --write .",
+    "format": "biome format --write .",
+    "lint:check": "biome check .",
+    "format:check": "biome format ."
   },
   "license": "MIT",
   "dependencies": {
@@ -17,13 +21,14 @@
     "@tauri-apps/plugin-opener": "^2"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
     "@sveltejs/adapter-static": "^3.0.6",
     "@sveltejs/kit": "^2.9.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tauri-apps/cli": "^2",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "typescript": "~5.6.2",
-    "vite": "^6.0.3",
-    "@tauri-apps/cli": "^2"
+    "vite": "^6.0.3"
   }
 }
