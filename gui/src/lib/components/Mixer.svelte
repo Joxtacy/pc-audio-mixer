@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { channelValues } from '$lib/stores/mixer'
+	import Fader from './Fader.svelte'
+
 	let _channels = $channelValues
 
 	$: _channels = $channelValues
@@ -8,7 +11,7 @@
 	<h2 class="mixer-title">Audio Mixer</h2>
 
 	<div class="faders-container">
-		{#each channels as channel (channel.id)}
+		{#each _channels as channel (channel.id)}
 			<Fader {channel} value={channel.value} />
 		{/each}
 	</div>

@@ -1,13 +1,26 @@
 <script lang="ts">
-	import { onMount } from 'svelte'
-	import { initializeMixer } from '$lib/stores/mixer'
+	import { onMount } from "svelte";
+	import { initializeMixer } from "$lib/stores/mixer";
+	import StatusBar from "$lib/components/StatusBar.svelte";
+	import Mixer from "$lib/components/Mixer.svelte";
+	import ApplicationList from "$lib/components/ApplicationList.svelte";
 
-	let _isInitialized = false
+	let isInitialized = false;
+	let initError: string | null = null;
 
 	onMount(async () => {
-		await initializeMixer()
-		_isInitialized = true
-	})
+		try {
+			console.log('Page mounted, initializing mixer...');
+			await initializeMixer();
+			isInitialized = true;
+			console.log('Page initialization complete');
+		} catch (error) {
+			console.error('Failed to initialize:', error);
+			initError = error instanceof Error ? error.message : String(error);
+			// Still set initialized to true so we can show the error
+			isInitialized = true;
+		}
+	});
 </script>
 
 <main class="app">
@@ -18,11 +31,19 @@
 
 	<div class="app-content">
 		{#if isInitialized}
-			<StatusBar />
-			<div class="main-layout">
-				<div class="mixer-section"><Mixer /></div>
-				<div class="sidebar"><ApplicationList /></div>
-			</div>
+			{#if initError}
+				<div class="error">
+					<h2>Initialization Error</h2>
+					<p>{initError}</p>
+					<p class="hint">Check the browser console for more details</p>
+				</div>
+			{:else}
+				<StatusBar />
+				<div class="main-layout">
+					<div class="mixer-section"><Mixer /></div>
+					<div class="sidebar"><ApplicationList /></div>
+				</div>
+			{/if}
 		{:else}
 			<div class="loading">
 				<div class="spinner"></div>
@@ -36,9 +57,8 @@
 	:global(body) {
 		margin: 0;
 		padding: 0;
-		font-family:
-			-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans",
-			"Helvetica Neue", sans-serif;
+		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+			Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
 		background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
 		color: #f0f0f0;
 		min-height: 100vh;
@@ -105,6 +125,27 @@
 	.loading p {
 		margin-top: 20px;
 		font-size: 14px;
+	}
+
+	.error {
+		text-align: center;
+		padding: 40px;
+		color: #ff6b6b;
+	}
+
+	.error h2 {
+		margin-bottom: 16px;
+		font-size: 24px;
+	}
+
+	.error p {
+		margin: 8px 0;
+	}
+
+	.error .hint {
+		color: #888;
+		font-size: 14px;
+		margin-top: 20px;
 	}
 
 	.main-layout {

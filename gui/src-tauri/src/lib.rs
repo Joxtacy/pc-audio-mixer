@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use types::{AudioSession, ConnectionStatus, MixerChannel, SerialPortInfo};
 
 // Constants for magic numbers
-const AUDIO_SESSION_POLL_INTERVAL_SECS: u64 = 5;
+const AUDIO_SESSION_POLL_INTERVAL_SECS: u64 = 2;
 const MASTER_VOLUME_PROCESS_ID: u32 = 0;
 
 struct AppState {
@@ -230,21 +230,12 @@ pub fn run() {
                             // Get current audio sessions
                             match audio_manager.get_audio_sessions() {
                                 Ok(current_sessions) => {
-                                    // Use RwLock for thread-safe comparison and update
-                                    let mut should_emit = false;
-                                    {
-                                        let last = last_sessions_state.read().await;
-                                        if *last != current_sessions {
-                                            should_emit = true;
-                                        }
-                                    }
-
-                                    if should_emit {
-                                        // Update stored sessions atomically
-                                        {
-                                            let mut last = last_sessions_state.write().await;
-                                            *last = current_sessions.clone();
-                                        }
+                                    // Use write lock for atomic comparison and update
+                                    let mut last = last_sessions_state.write().await;
+                                    if *last != current_sessions {
+                                        // Update stored sessions atomically with the same lock
+                                        *last = current_sessions.clone();
+                                        drop(last); // Release lock before emitting
 
                                         // Emit update event with error handling
                                         if let Err(e) = app_handle_clone2.emit("audio-sessions-updated", &current_sessions) {

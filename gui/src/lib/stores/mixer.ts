@@ -2,6 +2,18 @@ import { invoke } from '@tauri-apps/api/core'
 import { type Event, listen } from '@tauri-apps/api/event'
 import { derived, writable } from 'svelte/store'
 
+// Declare Tauri internals on window
+declare global {
+	interface Window {
+		__TAURI_INTERNALS__?: any
+	}
+}
+
+// Check if running in Tauri context
+function isTauriContext(): boolean {
+	return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
+}
+
 // Types
 export interface PotentiometerData {
 	pot1: number
@@ -171,13 +183,52 @@ export async function getAudioSessions(): Promise<AudioSession[]> {
 	}
 }
 
+// Wait for Tauri to be ready
+async function waitForTauri(maxRetries = 50, retryDelay = 100): Promise<void> {
+	for (let i = 0; i < maxRetries; i++) {
+		if (isTauriContext()) {
+			console.log(`Tauri context ready after ${i} attempts`)
+			return
+		}
+		await new Promise(resolve => setTimeout(resolve, retryDelay))
+	}
+	throw new Error('Tauri context not available after maximum retries')
+}
+
 // Initialize the mixer on app start
 export async function initializeMixer() {
-	await initializeListeners()
-	await loadMixerChannels()
-	await listSerialPorts()
-	await getAudioSessions()
+	console.log('Starting mixer initialization...')
 
-	// Try auto-connect
-	await connectSerial()
+	try {
+		// Wait for Tauri to be ready
+		console.log('Waiting for Tauri context...')
+		await waitForTauri()
+		console.log('Tauri context is ready')
+
+		console.log('Initializing listeners...')
+		await initializeListeners()
+		console.log('Listeners initialized')
+
+		console.log('Loading mixer channels...')
+		await loadMixerChannels()
+		console.log('Mixer channels loaded')
+
+		console.log('Listing serial ports...')
+		await listSerialPorts()
+		console.log('Serial ports listed')
+
+		console.log('Getting audio sessions...')
+		await getAudioSessions()
+		console.log('Audio sessions loaded')
+
+		// Try auto-connect but don't wait for it
+		connectSerial().catch(err => {
+			console.log('Auto-connect failed (this is normal if no device is connected):', err)
+		})
+
+		console.log('Mixer initialization complete!')
+	} catch (error) {
+		console.error('Failed to initialize mixer:', error)
+		throw error
+	}
 }

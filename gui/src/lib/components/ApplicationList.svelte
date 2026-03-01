@@ -1,5 +1,7 @@
 <script lang="ts">
-	function _getVolumeIcon(volume: number): string {
+	import { audioSessions } from '$lib/stores/mixer';
+
+	function getVolumeIcon(volume: number): string {
 		if (volume === 0) {
 			return '🔇'
 		}
@@ -12,7 +14,7 @@
 		return '🔊'
 	}
 
-	function _formatProcessName(name: string): string {
+	function formatProcessName(name: string): string {
 		// Sanitize and remove common file extensions
 		const sanitized = name
 			.replace(/[<>]/g, '') // Remove potential HTML tags
@@ -20,7 +22,7 @@
 		return sanitized.substring(0, 100) // Limit length
 	}
 
-	function _sanitizeDisplayName(name: string): string {
+	function sanitizeDisplayName(name: string): string {
 		// Sanitize display name to prevent XSS
 		return name
 			.replace(/[<>]/g, '') // Remove potential HTML tags
