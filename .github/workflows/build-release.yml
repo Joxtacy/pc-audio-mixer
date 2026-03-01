@@ -219,11 +219,11 @@ jobs:
       - name: Build firmware
         working-directory: ./firmware
         run: |
-          cargo build --release
+          cargo build --release --bin firmware
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: pico-firmware
-          path: firmware/target/thumbv6m-none-eabi/release/pc-audio-mixer-firmware
+          path: firmware/target/thumbv6m-none-eabi/release/firmware
 
