@@ -9,25 +9,36 @@ static INIT_COM: Once = Once::new();
 fn ensure_com_initialized() -> Result<()> {
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
-        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+        use windows_sys::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
-        static COM_INIT_SUCCESS: AtomicBool = AtomicBool::new(false);
+        // Store the actual HRESULT to avoid race conditions
+        static COM_INIT_RESULT: AtomicI32 = AtomicI32::new(0);
+        static INIT_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 
-        INIT_COM.call_once(|| unsafe {
-            let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
-            if hr.is_ok() {
-                COM_INIT_SUCCESS.store(true, Ordering::SeqCst);
-                log::info!("COM initialized successfully");
-            } else {
-                log::error!("Failed to initialize COM: {:?}", hr);
+        INIT_COM.call_once(|| {
+            // SAFETY: CoInitializeEx is thread-safe and we only call it once.
+            // COINIT_MULTITHREADED is required for Windows Audio Session APIs.
+            unsafe {
+                let hr = CoInitializeEx(std::ptr::null(), COINIT_MULTITHREADED);
+                COM_INIT_RESULT.store(hr, Ordering::SeqCst);
+                INIT_ATTEMPTED.store(true, Ordering::SeqCst);
+
+                if hr >= 0 {
+                    log::info!("COM initialized successfully");
+                } else {
+                    log::error!("Failed to initialize COM: 0x{:08x}", hr);
+                }
             }
         });
 
-        if COM_INIT_SUCCESS.load(Ordering::SeqCst) {
+        let hr = COM_INIT_RESULT.load(Ordering::SeqCst);
+        if hr >= 0 || hr == 0x00000001
+        /* S_FALSE - already initialized */
+        {
             Ok(())
         } else {
-            Err(anyhow!("COM initialization failed"))
+            Err(anyhow!("COM initialization failed: 0x{:08x}", hr))
         }
     }
 
@@ -36,52 +47,709 @@ fn ensure_com_initialized() -> Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn get_process_name_from_id(pid: u32) -> Option<String> {
-    use std::ffi::OsString;
-    use std::os::windows::ffi::OsStringExt;
-    use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::System::ProcessStatus::{GetModuleFileNameExW, GetProcessImageFileNameW};
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+mod windows_audio {
+    use super::*;
+    use std::ffi::c_void;
+    use std::mem;
+    use std::ptr;
+    use windows_sys::core::GUID;
+    use windows_sys::Win32::Foundation::*;
+    use windows_sys::Win32::Media::Audio::*;
+    use windows_sys::Win32::System::Com::*;
 
-    unsafe {
-        // Try to open the process with minimum required permissions
-        let process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+    /// RAII wrapper for COM interfaces - automatically calls Release on drop
+    struct ComPtr {
+        ptr: *mut c_void,
+        vtbl_offset: usize, // Offset to IUnknown vtable for Release
+    }
 
-        if process_handle.is_invalid() {
-            return None;
-        }
-
-        // Ensure handle is closed when we're done
-        let _guard = scopeguard::guard(process_handle, |h| {
-            let _ = CloseHandle(h);
-        });
-
-        const MAX_PATH: usize = 260; // Windows MAX_PATH constant
-        let mut buffer = [0u16; MAX_PATH];
-
-        // Try GetModuleFileNameExW first (requires more permissions)
-        let len = GetModuleFileNameExW(Some(process_handle), None, &mut buffer);
-
-        let final_len = if len == 0 {
-            // Fallback to GetProcessImageFileNameW (doesn't need Option wrapper)
-            let len = GetProcessImageFileNameW(process_handle, &mut buffer);
-            if len == 0 {
-                return None;
+    impl ComPtr {
+        fn new(ptr: *mut c_void) -> Option<Self> {
+            if ptr.is_null() {
+                None
+            } else {
+                Some(Self {
+                    ptr,
+                    vtbl_offset: 0,
+                })
             }
-            len.min(MAX_PATH as u32)
-        } else {
-            len.min(MAX_PATH as u32)
+        }
+    }
+
+    impl Drop for ComPtr {
+        fn drop(&mut self) {
+            if !self.ptr.is_null() {
+                unsafe {
+                    // SAFETY: We only create ComPtr with valid COM interfaces
+                    let vtbl = *(self.ptr as *mut *mut IUnknownVtbl);
+                    ((*vtbl).Release)(self.ptr);
+                }
+            }
+        }
+    }
+
+    // COM Interface GUIDs
+    const CLSID_MMDEVICEENUMERATOR: GUID = GUID {
+        data1: 0xBCDE0395,
+        data2: 0xE52F,
+        data3: 0x467C,
+        data4: [0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E],
+    };
+
+    const IID_IMMDEVICEENUMERATOR: GUID = GUID {
+        data1: 0xA95664D2,
+        data2: 0x9614,
+        data3: 0x4F35,
+        data4: [0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6],
+    };
+
+    const IID_IAUDIOSESSIONMANAGER2: GUID = GUID {
+        data1: 0x77AA99A0,
+        data2: 0x1BD6,
+        data3: 0x484F,
+        data4: [0x8B, 0xC7, 0x2C, 0x65, 0x4C, 0x9A, 0x9B, 0x6F],
+    };
+
+    const IID_IAUDIOENDPOINTVOLUME: GUID = GUID {
+        data1: 0x5CDF2C82,
+        data2: 0x841E,
+        data3: 0x4546,
+        data4: [0x97, 0x22, 0x0C, 0xF7, 0x40, 0x78, 0x22, 0x9A],
+    };
+
+    fn get_process_name_from_id(pid: u32) -> Option<String> {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::ProcessStatus::{
+            GetModuleFileNameExW, GetProcessImageFileNameW,
+        };
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
         };
 
-        let path = OsString::from_wide(&buffer[..final_len as usize]);
-        let path_str = path.to_string_lossy();
+        unsafe {
+            // Try to open the process with minimum required permissions
+            let process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false as _, pid);
 
-        // Extract just the filename from the full path
-        path_str
-            .split('\\')
-            .last()
-            .map(|s| s.to_string())
+            if process_handle == 0 {
+                return None;
+            }
+
+            // Ensure handle is closed when we're done
+            let _guard = scopeguard::guard(process_handle, |h| {
+                let _ = CloseHandle(h);
+            });
+
+            const MAX_PATH: usize = 260; // Windows MAX_PATH constant
+            let mut buffer = [0u16; MAX_PATH];
+
+            // SAFETY: GetModuleFileNameExW writes at most MAX_PATH characters to buffer.
+            // We've allocated exactly MAX_PATH u16s, preventing buffer overflow.
+            let len = GetModuleFileNameExW(process_handle, 0, buffer.as_mut_ptr(), MAX_PATH as u32);
+
+            let final_len = if len == 0 {
+                // SAFETY: GetProcessImageFileNameW writes at most MAX_PATH characters.
+                // Buffer is properly sized and process_handle is valid (checked above).
+                let len =
+                    GetProcessImageFileNameW(process_handle, buffer.as_mut_ptr(), MAX_PATH as u32);
+                if len == 0 {
+                    return None;
+                }
+                // Ensure we never read beyond buffer bounds
+                len.min(MAX_PATH as u32)
+            } else {
+                // Ensure we never read beyond buffer bounds
+                len.min(MAX_PATH as u32)
+            };
+
+            let path = OsString::from_wide(&buffer[..final_len as usize]);
+            let path_str = path.to_string_lossy();
+
+            // Extract just the filename from the full path
+            path_str.split('\\').last().map(|s| s.to_string())
+        }
     }
+
+    /// Gets the default audio device.
+    ///
+    /// # Safety
+    /// Caller must ensure COM is initialized.
+    /// The returned pointer must be released with Release() when done.
+    pub unsafe fn get_default_audio_device() -> Result<*mut c_void> {
+        let mut enumerator: *mut c_void = ptr::null_mut();
+
+        // SAFETY: CoCreateInstance is safe with valid GUIDs and null-initialized output pointer
+        let hr = CoCreateInstance(
+            &CLSID_MMDEVICEENUMERATOR,
+            ptr::null(),
+            CLSCTX_ALL,
+            &IID_IMMDEVICEENUMERATOR,
+            &mut enumerator as *mut _ as *mut *mut c_void,
+        );
+
+        if hr < 0 {
+            return Err(anyhow!("Failed to create MMDeviceEnumerator: 0x{:08x}", hr));
+        }
+
+        if enumerator.is_null() {
+            return Err(anyhow!("MMDeviceEnumerator returned null"));
+        }
+
+        let enumerator_vtbl = *(enumerator as *mut *mut IMMDeviceEnumeratorVtbl);
+        let mut device: *mut c_void = ptr::null_mut();
+
+        let hr = ((*enumerator_vtbl).GetDefaultAudioEndpoint)(
+            enumerator,
+            eRender,
+            eConsole,
+            &mut device,
+        );
+
+        // Release enumerator
+        ((*enumerator_vtbl).parent.Release)(enumerator);
+
+        if hr < 0 {
+            return Err(anyhow!(
+                "Failed to get default audio endpoint: 0x{:08x}",
+                hr
+            ));
+        }
+
+        Ok(device)
+    }
+
+    pub unsafe fn get_audio_session_manager(device: *mut c_void) -> Result<*mut c_void> {
+        let device_vtbl = *(device as *mut *mut IMMDeviceVtbl);
+        let mut session_manager: *mut c_void = ptr::null_mut();
+
+        let hr = ((*device_vtbl).Activate)(
+            device,
+            &IID_IAUDIOSESSIONMANAGER2,
+            CLSCTX_ALL,
+            ptr::null(),
+            &mut session_manager,
+        );
+
+        if hr < 0 {
+            return Err(anyhow!("Failed to get audio session manager: 0x{:08x}", hr));
+        }
+
+        Ok(session_manager)
+    }
+
+    pub unsafe fn get_endpoint_volume(device: *mut c_void) -> Result<*mut c_void> {
+        let device_vtbl = *(device as *mut *mut IMMDeviceVtbl);
+        let mut endpoint_volume: *mut c_void = ptr::null_mut();
+
+        let hr = ((*device_vtbl).Activate)(
+            device,
+            &IID_IAUDIOENDPOINTVOLUME,
+            CLSCTX_ALL,
+            ptr::null(),
+            &mut endpoint_volume,
+        );
+
+        if hr < 0 {
+            return Err(anyhow!("Failed to get endpoint volume: 0x{:08x}", hr));
+        }
+
+        Ok(endpoint_volume)
+    }
+
+    pub unsafe fn enumerate_audio_sessions_internal() -> Result<Vec<AudioSession>> {
+        let mut sessions = Vec::new();
+
+        // Get the default audio device
+        let device = match get_default_audio_device() {
+            Ok(d) => d,
+            Err(e) => {
+                log::error!("Failed to get default audio device: {}", e);
+                return Err(e);
+            }
+        };
+        let device_vtbl = *(device as *mut *mut IMMDeviceVtbl);
+
+        // Get master volume
+        match get_endpoint_volume(device) {
+            Ok(endpoint_volume) => {
+                let endpoint_vtbl = *(endpoint_volume as *mut *mut IAudioEndpointVolumeVtbl);
+
+                let mut volume_level: f32 = 0.0;
+                let mut is_muted: BOOL = 0;
+
+                let _ = ((*endpoint_vtbl).GetMasterVolumeLevelScalar)(
+                    endpoint_volume,
+                    &mut volume_level,
+                );
+                let _ = ((*endpoint_vtbl).GetMute)(endpoint_volume, &mut is_muted);
+
+                sessions.push(AudioSession {
+                    process_id: 0,
+                    process_name: "Master".to_string(),
+                    display_name: "Master Volume".to_string(),
+                    volume: volume_level * 100.0,
+                    is_muted: is_muted != 0,
+                });
+
+                ((*endpoint_vtbl).parent.Release)(endpoint_volume);
+            }
+            Err(e) => {
+                log::warn!("Failed to get master volume: {}", e);
+                // Add a default master volume entry
+                sessions.push(AudioSession {
+                    process_id: 0,
+                    process_name: "Master".to_string(),
+                    display_name: "Master Volume".to_string(),
+                    volume: 50.0,
+                    is_muted: false,
+                });
+            }
+        }
+
+        // Get the session manager
+        let session_manager = match get_audio_session_manager(device) {
+            Ok(mgr) => mgr,
+            Err(e) => {
+                log::error!("Failed to get session manager: {}", e);
+                ((*device_vtbl).parent.Release)(device);
+                return Ok(sessions); // Return with just master volume
+            }
+        };
+        let session_mgr_vtbl = *(session_manager as *mut *mut IAudioSessionManager2Vtbl);
+
+        // Get the session enumerator
+        let mut session_enum: *mut IAudioSessionEnumerator = ptr::null_mut();
+        let hr = ((*session_mgr_vtbl).GetSessionEnumerator)(session_manager, &mut session_enum);
+
+        if hr < 0 {
+            log::error!("Failed to get session enumerator: 0x{:08x}", hr);
+            ((*session_mgr_vtbl).parent.parent.Release)(session_manager);
+            ((*device_vtbl).parent.Release)(device);
+            return Ok(sessions);
+        }
+
+        let session_enum_vtbl = *(session_enum as *mut *mut IAudioSessionEnumeratorVtbl);
+
+        // Get the count of sessions
+        let mut count: i32 = 0;
+        let hr = ((*session_enum_vtbl).GetCount)(session_enum, &mut count);
+
+        if hr < 0 {
+            log::error!("Failed to get session count: 0x{:08x}", hr);
+        } else if count > 0 && count < 1000 {
+            // Sanity check to prevent excessive iteration
+            // Enumerate sessions
+            for i in 0..count {
+                let mut session_control: *mut IAudioSessionControl = ptr::null_mut();
+                let hr = ((*session_enum_vtbl).GetSession)(session_enum, i, &mut session_control);
+
+                if hr < 0 {
+                    continue;
+                }
+
+                // Query for IAudioSessionControl2
+                let session_ctrl_vtbl = *(session_control as *mut *mut IAudioSessionControlVtbl);
+                let mut session_control2: *mut IAudioSessionControl2 = ptr::null_mut();
+
+                let iid_control2 = GUID {
+                    data1: 0xbfb7ff88,
+                    data2: 0x7239,
+                    data3: 0x4fc9,
+                    data4: [0x8f, 0xa5, 0xca, 0x10, 0xd3, 0x5d, 0x6e, 0xe7],
+                };
+
+                let hr = ((*session_ctrl_vtbl).parent.QueryInterface)(
+                    session_control as *mut IUnknown,
+                    &iid_control2,
+                    &mut session_control2 as *mut _ as *mut *mut c_void,
+                );
+
+                if hr >= 0 && !session_control2.is_null() {
+                    let session_ctrl2_vtbl =
+                        *(session_control2 as *mut *mut IAudioSessionControl2Vtbl);
+
+                    // Get process ID
+                    let mut process_id: u32 = 0;
+                    let hr =
+                        ((*session_ctrl2_vtbl).GetProcessId)(session_control2, &mut process_id);
+
+                    if hr >= 0 && process_id != 0 {
+                        // Get process name
+                        let process_name = get_process_name_from_id(process_id)
+                            .unwrap_or_else(|| format!("Unknown App (PID: {})", process_id));
+
+                        // Get display name (often empty)
+                        let mut display_name_ptr: PWSTR = ptr::null_mut();
+                        let hr = ((*session_ctrl_vtbl).GetDisplayName)(
+                            session_control,
+                            &mut display_name_ptr,
+                        );
+
+                        let display_name = if hr >= 0 && !display_name_ptr.is_null() {
+                            // SAFETY: Find null terminator safely
+                            let mut len = 0;
+                            while len < 256 && *display_name_ptr.offset(len as isize) != 0 {
+                                len += 1;
+                            }
+                            let slice = std::slice::from_raw_parts(display_name_ptr, len);
+                            String::from_utf16_lossy(slice)
+                        } else {
+                            // Use process name as display name
+                            process_name.clone()
+                        };
+
+                        // Get volume through ISimpleAudioVolume
+                        let mut simple_volume: *mut ISimpleAudioVolume = ptr::null_mut();
+                        let iid_simple_volume = GUID {
+                            data1: 0x87CE5498,
+                            data2: 0x68D6,
+                            data3: 0x44E5,
+                            data4: [0x92, 0x15, 0x6D, 0xA4, 0x7E, 0xF8, 0x83, 0xD8],
+                        };
+
+                        let hr = ((*session_ctrl_vtbl).parent.QueryInterface)(
+                            session_control as *mut IUnknown,
+                            &iid_simple_volume,
+                            &mut simple_volume as *mut _ as *mut *mut c_void,
+                        );
+
+                        let (volume, is_muted) = if hr >= 0 && !simple_volume.is_null() {
+                            let simple_vol_vtbl =
+                                *(simple_volume as *mut *mut ISimpleAudioVolumeVtbl);
+
+                            let mut vol: f32 = 0.0;
+                            let mut muted: BOOL = 0;
+
+                            let _ = ((*simple_vol_vtbl).GetMasterVolume)(simple_volume, &mut vol);
+                            let _ = ((*simple_vol_vtbl).GetMute)(simple_volume, &mut muted);
+
+                            ((*simple_vol_vtbl).parent.Release)(simple_volume as *mut IUnknown);
+
+                            (vol * 100.0, muted != 0)
+                        } else {
+                            (50.0, false)
+                        };
+
+                        sessions.push(AudioSession {
+                            process_id,
+                            process_name,
+                            display_name,
+                            volume,
+                            is_muted,
+                        });
+                    }
+
+                    ((*session_ctrl2_vtbl).parent.parent.Release)(
+                        session_control2 as *mut IUnknown,
+                    );
+                }
+
+                ((*session_ctrl_vtbl).parent.Release)(session_control as *mut IUnknown);
+            }
+        }
+
+        // Cleanup
+        ((*session_enum_vtbl).parent.Release)(session_enum as *mut IUnknown);
+        ((*session_mgr_vtbl).parent.parent.Release)(session_manager);
+        ((*device_vtbl).parent.Release)(device);
+
+        Ok(sessions)
+    }
+
+    pub unsafe fn set_app_volume_internal(process_id: u32, volume: f32) -> Result<()> {
+        // Get the default audio device
+        let device = get_default_audio_device()?;
+        let device_vtbl = *(device as *mut *mut IMMDeviceVtbl);
+
+        // Special case: Master volume (process_id == 0)
+        if process_id == 0 {
+            let endpoint_volume = get_endpoint_volume(device)?;
+            let endpoint_vtbl = *(endpoint_volume as *mut *mut IAudioEndpointVolumeVtbl);
+
+            let volume_scalar = (volume / 100.0).clamp(0.0, 1.0);
+            let hr = ((*endpoint_vtbl).SetMasterVolumeLevelScalar)(
+                endpoint_volume,
+                volume_scalar,
+                ptr::null(),
+            );
+
+            ((*endpoint_vtbl).parent.Release)(endpoint_volume);
+            ((*device_vtbl).parent.Release)(device);
+
+            if hr < 0 {
+                return Err(anyhow!("Failed to set master volume: 0x{:08x}", hr));
+            }
+            return Ok(());
+        }
+
+        // Get the session manager
+        let session_manager = get_audio_session_manager(device)?;
+        let session_mgr_vtbl = *(session_manager as *mut *mut IAudioSessionManager2Vtbl);
+
+        // Get the session enumerator
+        let mut session_enum: *mut IAudioSessionEnumerator = ptr::null_mut();
+        let hr = ((*session_mgr_vtbl).GetSessionEnumerator)(session_manager, &mut session_enum);
+
+        if hr < 0 {
+            ((*session_mgr_vtbl).parent.parent.Release)(session_manager);
+            ((*device_vtbl).parent.Release)(device);
+            return Err(anyhow!("Failed to get session enumerator: 0x{:08x}", hr));
+        }
+
+        let session_enum_vtbl = *(session_enum as *mut *mut IAudioSessionEnumeratorVtbl);
+
+        // Get the count of sessions
+        let mut count: i32 = 0;
+        let _ = ((*session_enum_vtbl).GetCount)(session_enum, &mut count);
+
+        let mut found = false;
+
+        // Find the session with matching process ID
+        for i in 0..count {
+            let mut session_control: *mut IAudioSessionControl = ptr::null_mut();
+            let hr = ((*session_enum_vtbl).GetSession)(session_enum, i, &mut session_control);
+
+            if hr < 0 {
+                continue;
+            }
+
+            // Query for IAudioSessionControl2
+            let session_ctrl_vtbl = *(session_control as *mut *mut IAudioSessionControlVtbl);
+            let mut session_control2: *mut IAudioSessionControl2 = ptr::null_mut();
+
+            let iid_control2 = GUID {
+                data1: 0xbfb7ff88,
+                data2: 0x7239,
+                data3: 0x4fc9,
+                data4: [0x8f, 0xa5, 0xca, 0x10, 0xd3, 0x5d, 0x6e, 0xe7],
+            };
+
+            let hr = ((*session_ctrl_vtbl).parent.QueryInterface)(
+                session_control as *mut IUnknown,
+                &iid_control2,
+                &mut session_control2 as *mut _ as *mut *mut c_void,
+            );
+
+            if hr >= 0 && !session_control2.is_null() {
+                let session_ctrl2_vtbl = *(session_control2 as *mut *mut IAudioSessionControl2Vtbl);
+
+                // Get process ID
+                let mut pid: u32 = 0;
+                let hr = ((*session_ctrl2_vtbl).GetProcessId)(session_control2, &mut pid);
+
+                if hr >= 0 && pid == process_id {
+                    // Found our session - set volume through ISimpleAudioVolume
+                    let mut simple_volume: *mut ISimpleAudioVolume = ptr::null_mut();
+                    let iid_simple_volume = GUID {
+                        data1: 0x87CE5498,
+                        data2: 0x68D6,
+                        data3: 0x44E5,
+                        data4: [0x92, 0x15, 0x6D, 0xA4, 0x7E, 0xF8, 0x83, 0xD8],
+                    };
+
+                    let hr = ((*session_ctrl_vtbl).parent.QueryInterface)(
+                        session_control as *mut IUnknown,
+                        &iid_simple_volume,
+                        &mut simple_volume as *mut _ as *mut *mut c_void,
+                    );
+
+                    if hr >= 0 && !simple_volume.is_null() {
+                        let simple_vol_vtbl = *(simple_volume as *mut *mut ISimpleAudioVolumeVtbl);
+
+                        let volume_scalar = (volume / 100.0).clamp(0.0, 1.0);
+                        let hr = ((*simple_vol_vtbl).SetMasterVolume)(
+                            simple_volume,
+                            volume_scalar,
+                            ptr::null(),
+                        );
+
+                        ((*simple_vol_vtbl).parent.Release)(simple_volume as *mut IUnknown);
+
+                        if hr >= 0 {
+                            found = true;
+                        }
+                    }
+                }
+
+                ((*session_ctrl2_vtbl).parent.parent.Release)(session_control2 as *mut IUnknown);
+            }
+
+            ((*session_ctrl_vtbl).parent.Release)(session_control as *mut IUnknown);
+
+            if found {
+                break;
+            }
+        }
+
+        // Cleanup
+        ((*session_enum_vtbl).parent.Release)(session_enum as *mut IUnknown);
+        ((*session_mgr_vtbl).parent.parent.Release)(session_manager);
+        ((*device_vtbl).parent.Release)(device);
+
+        if found {
+            Ok(())
+        } else {
+            Err(anyhow!(
+                "No audio session found for process ID {}",
+                process_id
+            ))
+        }
+    }
+
+    pub unsafe fn get_master_volume_internal() -> Result<f32> {
+        let device = get_default_audio_device()?;
+        let device_vtbl = *(device as *mut *mut IMMDeviceVtbl);
+
+        let endpoint_volume = get_endpoint_volume(device)?;
+        let endpoint_vtbl = *(endpoint_volume as *mut *mut IAudioEndpointVolumeVtbl);
+
+        let mut volume_level: f32 = 0.0;
+
+        // SAFETY: endpoint_vtbl is valid (checked in get_endpoint_volume)
+        // volume_level pointer is valid stack variable
+        let hr = ((*endpoint_vtbl).GetMasterVolumeLevelScalar)(endpoint_volume, &mut volume_level);
+
+        // Always release COM interfaces, even on error
+        ((*endpoint_vtbl).parent.Release)(endpoint_volume);
+        ((*device_vtbl).parent.Release)(device);
+
+        if hr < 0 {
+            return Err(anyhow!("Failed to get master volume: 0x{:08x}", hr));
+        }
+
+        // Clamp to valid percentage range
+        Ok((volume_level * 100.0).clamp(0.0, 100.0))
+    }
+
+    // COM Interface definitions (vtables)
+    #[repr(C)]
+    struct IUnknownVtbl {
+        QueryInterface:
+            unsafe extern "system" fn(*mut IUnknown, *const GUID, *mut *mut c_void) -> HRESULT,
+        AddRef: unsafe extern "system" fn(*mut IUnknown) -> u32,
+        Release: unsafe extern "system" fn(*mut IUnknown) -> u32,
+    }
+
+    #[repr(C)]
+    struct IMMDeviceEnumeratorVtbl {
+        parent: IUnknownVtbl,
+        EnumAudioEndpoints: *const c_void,
+        GetDefaultAudioEndpoint:
+            unsafe extern "system" fn(*mut c_void, EDataFlow, ERole, *mut *mut c_void) -> HRESULT,
+        GetDevice: *const c_void,
+        RegisterEndpointNotificationCallback: *const c_void,
+        UnregisterEndpointNotificationCallback: *const c_void,
+    }
+
+    #[repr(C)]
+    struct IMMDeviceVtbl {
+        parent: IUnknownVtbl,
+        Activate: unsafe extern "system" fn(
+            *mut c_void,
+            *const GUID,
+            u32,
+            *const c_void,
+            *mut *mut c_void,
+        ) -> HRESULT,
+        OpenPropertyStore: *const c_void,
+        GetId: *const c_void,
+        GetState: *const c_void,
+    }
+
+    #[repr(C)]
+    struct IAudioSessionManagerVtbl {
+        parent: IUnknownVtbl,
+        GetAudioSessionControl: *const c_void,
+        GetSimpleAudioVolume: *const c_void,
+    }
+
+    #[repr(C)]
+    struct IAudioSessionManager2Vtbl {
+        parent: IAudioSessionManagerVtbl,
+        GetSessionEnumerator:
+            unsafe extern "system" fn(*mut c_void, *mut *mut IAudioSessionEnumerator) -> HRESULT,
+        RegisterSessionNotification: *const c_void,
+        UnregisterSessionNotification: *const c_void,
+        RegisterDuckNotification: *const c_void,
+        UnregisterDuckNotification: *const c_void,
+    }
+
+    #[repr(C)]
+    struct IAudioSessionEnumeratorVtbl {
+        parent: IUnknownVtbl,
+        GetCount: unsafe extern "system" fn(*mut IAudioSessionEnumerator, *mut i32) -> HRESULT,
+        GetSession: unsafe extern "system" fn(
+            *mut IAudioSessionEnumerator,
+            i32,
+            *mut *mut IAudioSessionControl,
+        ) -> HRESULT,
+    }
+
+    #[repr(C)]
+    struct IAudioSessionControlVtbl {
+        parent: IUnknownVtbl,
+        GetState: *const c_void,
+        GetDisplayName: unsafe extern "system" fn(*mut IAudioSessionControl, *mut PWSTR) -> HRESULT,
+        SetDisplayName: *const c_void,
+        GetIconPath: *const c_void,
+        SetIconPath: *const c_void,
+        GetGroupingParam: *const c_void,
+        SetGroupingParam: *const c_void,
+        RegisterAudioSessionNotification: *const c_void,
+        UnregisterAudioSessionNotification: *const c_void,
+    }
+
+    #[repr(C)]
+    struct IAudioSessionControl2Vtbl {
+        parent: IAudioSessionControlVtbl,
+        GetSessionIdentifier: *const c_void,
+        GetSessionInstanceIdentifier: *const c_void,
+        GetProcessId: unsafe extern "system" fn(*mut IAudioSessionControl2, *mut u32) -> HRESULT,
+        IsSystemSoundsSession: *const c_void,
+        SetDuckingPreference: *const c_void,
+    }
+
+    #[repr(C)]
+    struct ISimpleAudioVolumeVtbl {
+        parent: IUnknownVtbl,
+        SetMasterVolume:
+            unsafe extern "system" fn(*mut ISimpleAudioVolume, f32, *const GUID) -> HRESULT,
+        GetMasterVolume: unsafe extern "system" fn(*mut ISimpleAudioVolume, *mut f32) -> HRESULT,
+        SetMute: unsafe extern "system" fn(*mut ISimpleAudioVolume, BOOL, *const GUID) -> HRESULT,
+        GetMute: unsafe extern "system" fn(*mut ISimpleAudioVolume, *mut BOOL) -> HRESULT,
+    }
+
+    #[repr(C)]
+    struct IAudioEndpointVolumeVtbl {
+        parent: IUnknownVtbl,
+        RegisterControlChangeNotify: *const c_void,
+        UnregisterControlChangeNotify: *const c_void,
+        GetChannelCount: *const c_void,
+        SetMasterVolumeLevel: *const c_void,
+        SetMasterVolumeLevelScalar:
+            unsafe extern "system" fn(*mut c_void, f32, *const GUID) -> HRESULT,
+        GetMasterVolumeLevel: *const c_void,
+        GetMasterVolumeLevelScalar: unsafe extern "system" fn(*mut c_void, *mut f32) -> HRESULT,
+        SetChannelVolumeLevel: *const c_void,
+        SetChannelVolumeLevelScalar: *const c_void,
+        GetChannelVolumeLevel: *const c_void,
+        GetChannelVolumeLevelScalar: *const c_void,
+        SetMute: unsafe extern "system" fn(*mut c_void, BOOL, *const GUID) -> HRESULT,
+        GetMute: unsafe extern "system" fn(*mut c_void, *mut BOOL) -> HRESULT,
+        GetVolumeStepInfo: *const c_void,
+        VolumeStepUp: *const c_void,
+        VolumeStepDown: *const c_void,
+        QueryHardwareSupport: *const c_void,
+        GetVolumeRange: *const c_void,
+    }
+
+    // Type aliases for cleaner code
+    type IUnknown = c_void;
+    type IAudioSessionEnumerator = c_void;
+    type IAudioSessionControl = c_void;
+    type IAudioSessionControl2 = c_void;
+    type ISimpleAudioVolume = c_void;
 }
 
 pub struct WindowsAudioManager;
@@ -93,92 +761,29 @@ impl WindowsAudioManager {
         }
         Self
     }
-
-    #[cfg(target_os = "windows")]
-    fn enumerate_audio_sessions_internal() -> Result<Vec<AudioSession>> {
-        // Note: Windows 0.62 crate doesn't have IAudioSessionManager2 and related APIs
-        // in the base package. These would require additional feature flags or
-        // using windows-sys crate for raw bindings.
-        // For now, we provide a simplified implementation with master volume only.
-
-        let mut sessions = Vec::new();
-
-        // Add Master Volume
-        sessions.push(AudioSession {
-            process_id: 0,
-            process_name: "Master".to_string(),
-            display_name: "Master Volume".to_string(),
-            volume: 50.0,
-            is_muted: false,
-        });
-
-        // Add some common Windows applications as placeholders
-        // In a real implementation with proper APIs, you'd enumerate actual sessions
-        let common_apps = vec![
-            (1234, "chrome.exe", "Google Chrome"),
-            (5678, "firefox.exe", "Mozilla Firefox"),
-            (9012, "spotify.exe", "Spotify"),
-            (3456, "discord.exe", "Discord"),
-            (7890, "msedge.exe", "Microsoft Edge"),
-        ];
-
-        for (pid, process_name, display_name) in common_apps {
-            sessions.push(AudioSession {
-                process_id: pid,
-                process_name: process_name.to_string(),
-                display_name: display_name.to_string(),
-                volume: 50.0,
-                is_muted: false,
-            });
-        }
-
-        Ok(sessions)
-    }
 }
 
 impl AudioManager for WindowsAudioManager {
     fn get_audio_sessions(&self) -> Result<Vec<AudioSession>> {
         #[cfg(target_os = "windows")]
         {
-            // Try to enumerate real sessions, fallback to mock data on error
-            match Self::enumerate_audio_sessions_internal() {
-                Ok(sessions) if !sessions.is_empty() => Ok(sessions),
-                Ok(_) => {
-                    // No sessions found, return at least Master Volume
-                    Ok(vec![AudioSession {
-                        process_id: 0,
-                        process_name: "Master".to_string(),
-                        display_name: "Master Volume".to_string(),
-                        volume: 75.0,
-                        is_muted: false,
-                    }])
-                }
-                Err(e) => {
-                    log::error!("Failed to enumerate audio sessions: {}", e);
-                    // Return mock data as fallback
-                    Ok(vec![
-                        AudioSession {
+            unsafe {
+                match windows_audio::enumerate_audio_sessions_internal() {
+                    Ok(sessions) if !sessions.is_empty() => Ok(sessions),
+                    Ok(_) => {
+                        // No sessions found, return at least Master Volume
+                        Ok(vec![AudioSession {
                             process_id: 0,
                             process_name: "Master".to_string(),
                             display_name: "Master Volume".to_string(),
                             volume: 75.0,
                             is_muted: false,
-                        },
-                        AudioSession {
-                            process_id: 1234,
-                            process_name: "chrome.exe".to_string(),
-                            display_name: "Google Chrome".to_string(),
-                            volume: 50.0,
-                            is_muted: false,
-                        },
-                        AudioSession {
-                            process_id: 5678,
-                            process_name: "spotify.exe".to_string(),
-                            display_name: "Spotify".to_string(),
-                            volume: 65.0,
-                            is_muted: false,
-                        },
-                    ])
+                        }])
+                    }
+                    Err(e) => {
+                        log::error!("Failed to enumerate audio sessions: {}", e);
+                        Err(anyhow!("Windows audio enumeration failed: {}", e))
+                    }
                 }
             }
         }
@@ -186,55 +791,48 @@ impl AudioManager for WindowsAudioManager {
         #[cfg(not(target_os = "windows"))]
         {
             // Non-Windows platform - return mock data
-            Ok(vec![
-                AudioSession {
-                    process_id: 0,
-                    process_name: "Master".to_string(),
-                    display_name: "Master Volume".to_string(),
-                    volume: 75.0,
-                    is_muted: false,
-                },
-            ])
+            Ok(vec![AudioSession {
+                process_id: 0,
+                process_name: "Master".to_string(),
+                display_name: "Master Volume".to_string(),
+                volume: 75.0,
+                is_muted: false,
+            }])
         }
     }
 
     fn set_app_volume(&self, process_id: u32, volume: f32) -> Result<()> {
+        // Validate input
+        if !volume.is_finite() || volume < 0.0 || volume > 100.0 {
+            return Err(anyhow!("Volume must be between 0 and 100, got {}", volume));
+        }
+
         #[cfg(target_os = "windows")]
         {
-            if process_id == 0 {
-                // Master volume
-                return self.set_master_volume(volume);
+            unsafe {
+                windows_audio::set_app_volume_internal(process_id, volume)
+                    .map_err(|e| anyhow!("Failed to set volume for process {}: {}", process_id, e))
             }
-
-            // Per-app volume control would require ISimpleAudioVolume
-            // which is not available in the base windows crate features
-            // For now, just log the request
-            log::info!(
-                "Windows: Would set volume for process {} to {}% (not implemented)",
-                process_id, volume
-            );
         }
-        Ok(())
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            log::info!("Would set volume for process {} to {}%", process_id, volume);
+            Ok(())
+        }
     }
 
     fn set_master_volume(&self, volume: f32) -> Result<()> {
-        #[cfg(target_os = "windows")]
-        {
-            // Note: Master volume control APIs are not available in the base windows crate
-            // This would require additional features or using windows-sys
-            log::info!("Windows: Would set master volume to {}% (not implemented)", volume);
-        }
-
-        Ok(())
+        self.set_app_volume(0, volume)
     }
 
     fn get_master_volume(&self) -> Result<f32> {
         #[cfg(target_os = "windows")]
         {
-            // Note: Master volume control APIs are not available in the base windows crate
-            // This would require additional features or using windows-sys
-            // Return a default value for now
-            Ok(50.0)
+            unsafe {
+                windows_audio::get_master_volume_internal()
+                    .map_err(|e| anyhow!("Failed to get master volume: {}", e))
+            }
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -247,5 +845,13 @@ impl AudioManager for WindowsAudioManager {
 impl Default for WindowsAudioManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Drop for WindowsAudioManager {
+    fn drop(&mut self) {
+        // COM cleanup is handled automatically by Windows when the process exits
+        // Individual interface releases are done within each function
+        log::debug!("WindowsAudioManager dropped");
     }
 }
