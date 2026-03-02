@@ -20,7 +20,7 @@ fn ensure_com_initialized() -> Result<()> {
             // SAFETY: CoInitializeEx is thread-safe and we only call it once.
             // COINIT_MULTITHREADED is required for Windows Audio Session APIs.
             unsafe {
-                let hr = CoInitializeEx(std::ptr::null(), COINIT_MULTITHREADED);
+                let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_MULTITHREADED as u32);
                 COM_INIT_RESULT.store(hr, Ordering::SeqCst);
                 INIT_ATTEMPTED.store(true, Ordering::SeqCst);
 
@@ -56,6 +56,12 @@ mod windows_audio {
     use windows_sys::Win32::Foundation::*;
     use windows_sys::Win32::Media::Audio::*;
     use windows_sys::Win32::System::Com::*;
+
+    // Type aliases for missing types in windows-sys
+    type BOOL = i32;
+    type HRESULT = i32;
+    type PWSTR = *mut u16;
+    type HANDLE = *mut c_void;
 
     /// RAII wrapper for COM interfaces - automatically calls Release on drop
     struct ComPtr {
@@ -132,7 +138,7 @@ mod windows_audio {
             // Try to open the process with minimum required permissions
             let process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false as _, pid);
 
-            if process_handle == 0 {
+            if process_handle.is_null() {
                 return None;
             }
 
@@ -146,7 +152,7 @@ mod windows_audio {
 
             // SAFETY: GetModuleFileNameExW writes at most MAX_PATH characters to buffer.
             // We've allocated exactly MAX_PATH u16s, preventing buffer overflow.
-            let len = GetModuleFileNameExW(process_handle, 0, buffer.as_mut_ptr(), MAX_PATH as u32);
+            let len = GetModuleFileNameExW(process_handle, std::ptr::null_mut(), buffer.as_mut_ptr(), MAX_PATH as u32);
 
             let final_len = if len == 0 {
                 // SAFETY: GetProcessImageFileNameW writes at most MAX_PATH characters.
@@ -182,7 +188,7 @@ mod windows_audio {
         // SAFETY: CoCreateInstance is safe with valid GUIDs and null-initialized output pointer
         let hr = CoCreateInstance(
             &CLSID_MMDEVICEENUMERATOR,
-            ptr::null(),
+            ptr::null_mut(),
             CLSCTX_ALL,
             &IID_IMMDEVICEENUMERATOR,
             &mut enumerator as *mut _ as *mut *mut c_void,
@@ -227,7 +233,7 @@ mod windows_audio {
             device,
             &IID_IAUDIOSESSIONMANAGER2,
             CLSCTX_ALL,
-            ptr::null(),
+            ptr::null_mut(),
             &mut session_manager,
         );
 
@@ -246,7 +252,7 @@ mod windows_audio {
             device,
             &IID_IAUDIOENDPOINTVOLUME,
             CLSCTX_ALL,
-            ptr::null(),
+            ptr::null_mut(),
             &mut endpoint_volume,
         );
 
@@ -471,7 +477,7 @@ mod windows_audio {
             let hr = ((*endpoint_vtbl).SetMasterVolumeLevelScalar)(
                 endpoint_volume,
                 volume_scalar,
-                ptr::null(),
+                ptr::null_mut(),
             );
 
             ((*endpoint_vtbl).parent.Release)(endpoint_volume);
@@ -561,7 +567,7 @@ mod windows_audio {
                         let hr = ((*simple_vol_vtbl).SetMasterVolume)(
                             simple_volume,
                             volume_scalar,
-                            ptr::null(),
+                            ptr::null_mut(),
                         );
 
                         ((*simple_vol_vtbl).parent.Release)(simple_volume as *mut IUnknown);
@@ -625,8 +631,7 @@ mod windows_audio {
     // COM Interface definitions (vtables)
     #[repr(C)]
     struct IUnknownVtbl {
-        QueryInterface:
-            unsafe extern "system" fn(*mut IUnknown, *const GUID, *mut *mut c_void) -> HRESULT,
+        QueryInterface: unsafe extern "system" fn(*mut IUnknown, *const GUID, *mut *mut c_void) -> HRESULT,
         AddRef: unsafe extern "system" fn(*mut IUnknown) -> u32,
         Release: unsafe extern "system" fn(*mut IUnknown) -> u32,
     }
@@ -635,8 +640,7 @@ mod windows_audio {
     struct IMMDeviceEnumeratorVtbl {
         parent: IUnknownVtbl,
         EnumAudioEndpoints: *const c_void,
-        GetDefaultAudioEndpoint:
-            unsafe extern "system" fn(*mut c_void, EDataFlow, ERole, *mut *mut c_void) -> HRESULT,
+        GetDefaultAudioEndpoint: unsafe extern "system" fn(*mut c_void, EDataFlow, ERole, *mut *mut c_void) -> HRESULT,
         GetDevice: *const c_void,
         RegisterEndpointNotificationCallback: *const c_void,
         UnregisterEndpointNotificationCallback: *const c_void,
@@ -645,13 +649,7 @@ mod windows_audio {
     #[repr(C)]
     struct IMMDeviceVtbl {
         parent: IUnknownVtbl,
-        Activate: unsafe extern "system" fn(
-            *mut c_void,
-            *const GUID,
-            u32,
-            *const c_void,
-            *mut *mut c_void,
-        ) -> HRESULT,
+        Activate: unsafe extern "system" fn(*mut c_void, *const GUID, u32, *const c_void, *mut *mut c_void) -> HRESULT,
         OpenPropertyStore: *const c_void,
         GetId: *const c_void,
         GetState: *const c_void,
@@ -667,8 +665,7 @@ mod windows_audio {
     #[repr(C)]
     struct IAudioSessionManager2Vtbl {
         parent: IAudioSessionManagerVtbl,
-        GetSessionEnumerator:
-            unsafe extern "system" fn(*mut c_void, *mut *mut IAudioSessionEnumerator) -> HRESULT,
+        GetSessionEnumerator: unsafe extern "system" fn(*mut c_void, *mut *mut IAudioSessionEnumerator) -> HRESULT,
         RegisterSessionNotification: *const c_void,
         UnregisterSessionNotification: *const c_void,
         RegisterDuckNotification: *const c_void,
@@ -679,11 +676,7 @@ mod windows_audio {
     struct IAudioSessionEnumeratorVtbl {
         parent: IUnknownVtbl,
         GetCount: unsafe extern "system" fn(*mut IAudioSessionEnumerator, *mut i32) -> HRESULT,
-        GetSession: unsafe extern "system" fn(
-            *mut IAudioSessionEnumerator,
-            i32,
-            *mut *mut IAudioSessionControl,
-        ) -> HRESULT,
+        GetSession: unsafe extern "system" fn(*mut IAudioSessionEnumerator, i32, *mut *mut IAudioSessionControl) -> HRESULT,
     }
 
     #[repr(C)]
@@ -713,8 +706,7 @@ mod windows_audio {
     #[repr(C)]
     struct ISimpleAudioVolumeVtbl {
         parent: IUnknownVtbl,
-        SetMasterVolume:
-            unsafe extern "system" fn(*mut ISimpleAudioVolume, f32, *const GUID) -> HRESULT,
+        SetMasterVolume: unsafe extern "system" fn(*mut ISimpleAudioVolume, f32, *const GUID) -> HRESULT,
         GetMasterVolume: unsafe extern "system" fn(*mut ISimpleAudioVolume, *mut f32) -> HRESULT,
         SetMute: unsafe extern "system" fn(*mut ISimpleAudioVolume, BOOL, *const GUID) -> HRESULT,
         GetMute: unsafe extern "system" fn(*mut ISimpleAudioVolume, *mut BOOL) -> HRESULT,
@@ -727,8 +719,7 @@ mod windows_audio {
         UnregisterControlChangeNotify: *const c_void,
         GetChannelCount: *const c_void,
         SetMasterVolumeLevel: *const c_void,
-        SetMasterVolumeLevelScalar:
-            unsafe extern "system" fn(*mut c_void, f32, *const GUID) -> HRESULT,
+        SetMasterVolumeLevelScalar: unsafe extern "system" fn(*mut c_void, f32, *const GUID) -> HRESULT,
         GetMasterVolumeLevel: *const c_void,
         GetMasterVolumeLevelScalar: unsafe extern "system" fn(*mut c_void, *mut f32) -> HRESULT,
         SetChannelVolumeLevel: *const c_void,
