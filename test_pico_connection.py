@@ -96,8 +96,19 @@ def main():
                 line = ser.readline().decode('utf-8').strip()
                 try:
                     data = json.loads(line)
+                    # Use default value 0 for any missing potentiometer
+                    pot_values = {
+                        'pot1': data.get('pot1', -1),
+                        'pot2': data.get('pot2', -1),
+                        'pot3': data.get('pot3', -1),
+                        'pot4': data.get('pot4', -1),
+                        'pot5': data.get('pot5', -1),
+                        'pot6': data.get('pot6', -1),
+                        'pot7': data.get('pot7', -1),
+                        'pot8': data.get('pot8', -1)
+                    }
                     # Clear previous line and print new values
-                    print(f"\r🎛️  Pot1: {data['pot1']:4d}  |  Pot2: {data['pot2']:4d}  |  Pot3: {data['pot3']:4d}  ", end="", flush=True)
+                    print(f"\r🎛️  Pot1: {pot_values['pot1']:4d}  |  Pot2: {pot_values['pot2']:4d}  |  Pot3: {pot_values['pot3']:4d}  |  Pot4: {pot_values['pot4']:4d} |  Pot5: {pot_values['pot5']:4d} |  Pot6: {pot_values['pot6']:4d} |  Pot7: {pot_values['pot7']:4d} |  Pot8: {pot_values['pot8']:4d}      ", end="", flush=True)
                     line_count += 1
 
                     # Print a newline occasionally for readability
