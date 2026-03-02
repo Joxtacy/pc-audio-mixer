@@ -3,13 +3,14 @@
 //! This application reads analog values from 3 potentiometers connected to ADC pins
 //! and transmits their values to a PC over USB CDC (serial communication).
 //!
-//! Potentiometer connections:
-//! - Pot 1: GPIO26 (ADC0)
-//! - Pot 2: GPIO27 (ADC1)
-//! - Pot 3: GPIO28 (ADC2)
-//!
-//! Note: GPIO29 (ADC3) is not available on this board.
-//! For additional channels, consider using an external ADC like MCP3008.
+//! MCP3008 Wiring:
+//! - VDD/VREF → 3.3V
+//! - AGND/DGND → GND
+//! - CLK → GPIO18 (SPI0 SCK)
+//! - DOUT → GPIO16 (SPI0 MISO)
+//! - DIN → GPIO19 (SPI0 MOSI)
+//! - CS → GPIO17 (SPI0 CS)
+//! - CH0-CH2 → Potentiometer wipers (3 channels used)
 
 #![no_std]
 #![no_main]
@@ -35,15 +36,15 @@ use rp_pico::hal::pac;
 use rp_pico::hal;
 
 use hal::{
-    adc::{Adc, AdcPin},
-    clocks::init_clocks_and_plls,
+    clocks::{init_clocks_and_plls, Clock},
+    fugit::RateExtU32,
+    gpio::FunctionSpi,
+    spi::Spi,
 };
 
-// Import nb trait for non-blocking operations
-use nb::block;
 // Import embedded-hal v0.2 traits
-use embedded_hal::adc::OneShot;
-use embedded_hal::digital::v2::{OutputPin, StatefulOutputPin};
+use embedded_hal::digital::v2::OutputPin;
+use embedded_hal::spi::FullDuplex;
 
 use usb_device::device::StringDescriptors;
 use usb_device::{class_prelude::*, prelude::*};
@@ -52,35 +53,67 @@ use usbd_serial::SerialPort;
 use core::fmt::Write;
 use heapless::String;
 
-use serde::Serialize;
-
-// Structure to hold potentiometer readings
-#[derive(Serialize)]
-struct PotentiometerData {
-    pot1: u16,
-    pot2: u16,
-    pot3: u16,
+// MCP3008 ADC driver
+struct Mcp3008<SPI, CS> {
+    spi: SPI,
+    cs_pin: CS,
 }
 
-/// Drives the pin high
-fn pin_on<P: OutputPin>(led: &mut P) -> Result<(), P::Error> {
-    led.set_high()
-}
-
-/// Drives the pin low
-fn pin_off<P: OutputPin>(led: &mut P) -> Result<(), P::Error> {
-    led.set_low()
-}
-
-/// Toggles the state of the pin
-fn pin_toggle<P: StatefulOutputPin>(led: &mut P) -> Result<(), P::Error>
+impl<SPI, CS> Mcp3008<SPI, CS>
 where
-    P::Error: core::fmt::Debug,
+    SPI: FullDuplex<u8>,
+    CS: OutputPin,
 {
-    if led.is_set_high().unwrap_or(false) {
-        led.set_low()
-    } else {
-        led.set_high()
+    fn new(spi: SPI, cs_pin: CS) -> Self {
+        Self { spi, cs_pin }
+    }
+
+    fn read_channel(&mut self, channel: u8) -> Result<u16, ()> {
+        if channel > 7 {
+            return Err(());
+        }
+
+        // MCP3008 expects:
+        // Byte 0: [x x x x x START SGL/DIFF D2]
+        // Byte 1: [D1 D0 x x x x x x]
+        // Byte 2: [x x x x x x x x]
+        // Where START=1, SGL/DIFF=1 for single-ended, D2-D0 = channel
+
+        // Build the command bytes correctly
+        let start_bit = 0x01;
+        let single_ended = 0x80;  // SGL/DIFF = 1 for single-ended
+
+        // First byte: START bit (bit 0)
+        let tx_buf = [
+            start_bit,
+            single_ended | (channel << 4),  // SGL/DIFF + channel high bits
+            0x00,
+        ];
+        let mut rx_buf = [0u8; 3];
+
+        self.cs_pin.set_low().ok();
+
+        // Transfer data
+        for i in 0..3 {
+            // Send byte and wait for response
+            if nb::block!(self.spi.send(tx_buf[i])).is_err() {
+                self.cs_pin.set_high().ok();
+                return Err(());
+            }
+            match nb::block!(self.spi.read()) {
+                Ok(data) => rx_buf[i] = data,
+                Err(_) => {
+                    self.cs_pin.set_high().ok();
+                    return Err(());
+                }
+            }
+        }
+
+        self.cs_pin.set_high().ok();
+
+        // Extract 10-bit result from received bytes
+        let result = ((rx_buf[1] as u16 & 0x03) << 8) | (rx_buf[2] as u16);
+        Ok(result)
     }
 }
 
@@ -91,12 +124,11 @@ fn main() -> ! {
 
     // Take ownership of the device peripherals
     let mut pac = pac::Peripherals::take().unwrap();
-    let core = pac::CorePeripherals::take().unwrap();
+    let _core = pac::CorePeripherals::take().unwrap();
 
     // Set up the watchdog driver - needed by the clock setup code
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
 
-    let clock_speed = rp_pico::XOSC_CRYSTAL_FREQ;
     let clock_speed = 12_000_000u32;
     // Configure the clocks
     let clocks = init_clocks_and_plls(
@@ -146,21 +178,30 @@ fn main() -> ! {
 
     // Turn on the onboard LED to indicate the Pico is running
     let mut led_pin = pins.led.into_push_pull_output();
-    pin_on(&mut led_pin).unwrap();
+    let _ = led_pin.set_high();
 
     #[cfg(feature = "probe")]
     debug!("LED turned on");
 
-    // Initialize the ADC
-    let mut adc = Adc::new(pac.ADC, &mut pac.RESETS);
+    // Set up SPI for MCP3008
+    let spi_pins = (
+        pins.gpio19.into_function::<FunctionSpi>(), // MOSI
+        pins.gpio16.into_function::<FunctionSpi>(), // MISO
+        pins.gpio18.into_function::<FunctionSpi>(), // SCK
+    );
 
-    // Configure ADC pins for potentiometers
-    // Using 3 available ADC inputs: ADC0 (GPIO26), ADC1 (GPIO27), ADC2 (GPIO28)
-    let mut adc_pin_0 = AdcPin::new(pins.gpio26.into_floating_input()).unwrap();
-    let mut adc_pin_1 = AdcPin::new(pins.gpio27.into_floating_input()).unwrap();
-    let mut adc_pin_2 = AdcPin::new(pins.gpio28.into_floating_input()).unwrap();
+    let spi = Spi::<_, _, _, 8>::new(pac.SPI0, spi_pins).init(
+        &mut pac.RESETS,
+        clocks.peripheral_clock.freq(),
+        1_000_000u32.Hz(), // 1 MHz SPI clock (safe for 3.3V operation)
+        embedded_hal::spi::MODE_0,
+    );
 
-    // Don't use cortex_m delay - it blocks USB!
+    let cs_pin = pins.gpio17.into_push_pull_output();
+    let mut mcp3008 = Mcp3008::new(spi, cs_pin);
+
+    #[cfg(feature = "probe")]
+    info!("MCP3008 initialized, starting main loop...");
 
     let mut said_hello = false;
     let mut counter = 0u32;
@@ -201,13 +242,16 @@ fn main() -> ! {
 
         // Send JSON data periodically (roughly every 10000 polls for ~50ms at USB polling rate)
         if counter.is_multiple_of(10000) {
-            // Read potentiometers
-            let pot1_raw: u16 = block!(adc.read(&mut adc_pin_0)).unwrap_or(0);
-            let pot2_raw: u16 = block!(adc.read(&mut adc_pin_1)).unwrap_or(0);
-            let pot3_raw: u16 = block!(adc.read(&mut adc_pin_2)).unwrap_or(0);
+            // Read potentiometers from MCP3008 channels 0, 1, 2
+            let pot1_raw = mcp3008.read_channel(0).unwrap_or(0);
+            let pot2_raw = mcp3008.read_channel(1).unwrap_or(0);
+            let pot3_raw = mcp3008.read_channel(2).unwrap_or(0);
+
+            #[cfg(feature = "probe")]
+            info!("pot1: {}\npot2: {}\npot3: {}", pot1_raw, pot2_raw, pot3_raw);
 
             // Create JSON manually to avoid heap allocation
-            let mut json: String<64> = String::new();
+            let mut json: String<128> = String::new();
             let _ = writeln!(
                 &mut json,
                 "{{\"pot1\":{},\"pot2\":{},\"pot3\":{}}}",
@@ -217,6 +261,5 @@ fn main() -> ! {
         }
 
         counter = counter.wrapping_add(1);
-        // No delay - just keep polling USB!
     }
 }
