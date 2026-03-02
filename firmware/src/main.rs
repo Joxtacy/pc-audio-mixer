@@ -1,6 +1,6 @@
-//! PC Audio Mixer - Reads 3 slide potentiometers and sends values over USB
+//! PC Audio Mixer - Reads 8 slide potentiometers and sends values over USB
 //!
-//! This application reads analog values from 3 potentiometers connected to ADC pins
+//! This application reads analog values from 8 potentiometers connected via MCP3008 ADC
 //! and transmits their values to a PC over USB CDC (serial communication).
 //!
 //! MCP3008 Wiring:
@@ -10,7 +10,7 @@
 //! - DOUT → GPIO16 (SPI0 MISO)
 //! - DIN → GPIO19 (SPI0 MOSI)
 //! - CS → GPIO17 (SPI0 CS)
-//! - CH0-CH2 → Potentiometer wipers (3 channels used)
+//! - CH0-CH7 → Potentiometer wipers (all 8 channels used)
 
 #![no_std]
 #![no_main]
@@ -81,12 +81,12 @@ where
 
         // Build the command bytes correctly
         let start_bit = 0x01;
-        let single_ended = 0x80;  // SGL/DIFF = 1 for single-ended
+        let single_ended = 0x80; // SGL/DIFF = 1 for single-ended
 
         // First byte: START bit (bit 0)
         let tx_buf = [
             start_bit,
-            single_ended | (channel << 4),  // SGL/DIFF + channel high bits
+            single_ended | (channel << 4), // SGL/DIFF + channel high bits
             0x00,
         ];
         let mut rx_buf = [0u8; 3];
@@ -246,16 +246,24 @@ fn main() -> ! {
             let pot1_raw = mcp3008.read_channel(0).unwrap_or(0);
             let pot2_raw = mcp3008.read_channel(1).unwrap_or(0);
             let pot3_raw = mcp3008.read_channel(2).unwrap_or(0);
+            let pot4_raw = mcp3008.read_channel(3).unwrap_or(0);
+            let pot5_raw = mcp3008.read_channel(4).unwrap_or(0);
+            let pot6_raw = mcp3008.read_channel(5).unwrap_or(0);
+            let pot7_raw = mcp3008.read_channel(6).unwrap_or(0);
+            let pot8_raw = mcp3008.read_channel(7).unwrap_or(0);
 
             #[cfg(feature = "probe")]
-            info!("pot1: {}\npot2: {}\npot3: {}", pot1_raw, pot2_raw, pot3_raw);
+            info!(
+                "\npot1: {}\npot2: {}\npot3: {}\npot4: {}\npot5: {}\npot6: {}\npot7: {}\npot8: {}",
+                pot1_raw, pot2_raw, pot3_raw, pot4_raw, pot5_raw, pot6_raw, pot7_raw, pot8_raw
+            );
 
             // Create JSON manually to avoid heap allocation
-            let mut json: String<128> = String::new();
+            let mut json: String<256> = String::new();
             let _ = writeln!(
                 &mut json,
-                "{{\"pot1\":{},\"pot2\":{},\"pot3\":{}}}",
-                pot1_raw, pot2_raw, pot3_raw
+                "{{\"pot1\":{},\"pot2\":{},\"pot3\":{},\"pot4\":{},\"pot5\":{},\"pot6\":{},\"pot7\":{},\"pot8\":{}}}",
+                pot1_raw, pot2_raw, pot3_raw, pot4_raw, pot5_raw, pot6_raw, pot7_raw, pot8_raw
             );
             let _ = serial.write(json.as_bytes());
         }
