@@ -195,6 +195,18 @@ export async function getAudioSessions(): Promise<AudioSession[]> {
 
 // Wait for Tauri to be ready
 async function waitForTauri(maxRetries = 50, retryDelay = 100): Promise<void> {
+	// Check immediately if Tauri is available
+	if (isTauriContext()) {
+		console.log('Tauri context ready immediately')
+		return
+	}
+
+	// If not in Tauri context after first check, likely in browser
+	if (maxRetries === 50 && typeof window !== 'undefined') {
+		console.warn('Not running in Tauri context - possibly opened in browser')
+		throw new Error('This application must be run as a Tauri desktop app, not in a browser. Please run "pnpm tauri dev" and use the native window.')
+	}
+
 	for (let i = 0; i < maxRetries; i++) {
 		if (isTauriContext()) {
 			console.log(`Tauri context ready after ${i} attempts`)
@@ -208,6 +220,7 @@ async function waitForTauri(maxRetries = 50, retryDelay = 100): Promise<void> {
 // Initialize the mixer on app start
 export async function initializeMixer() {
 	console.log('Starting mixer initialization...')
+	const errors: string[] = []
 
 	try {
 		// Wait for Tauri to be ready
@@ -219,24 +232,60 @@ export async function initializeMixer() {
 		await initializeListeners()
 		console.log('Listeners initialized')
 
-		console.log('Loading mixer channels...')
-		await loadMixerChannels()
-		console.log('Mixer channels loaded')
+		// Load mixer channels - non-critical, continue if fails
+		try {
+			console.log('Loading mixer channels...')
+			await loadMixerChannels()
+			console.log('Mixer channels loaded')
+		} catch (error) {
+			console.error('Failed to load mixer channels:', error)
+			errors.push(`Mixer channels: ${error}`)
+		}
 
-		console.log('Listing serial ports...')
-		await listSerialPorts()
-		console.log('Serial ports listed')
+		// List serial ports - non-critical, continue if fails
+		try {
+			console.log('Listing serial ports...')
+			await listSerialPorts()
+			console.log('Serial ports listed')
+		} catch (error) {
+			console.error('Failed to list serial ports:', error)
+			errors.push(`Serial ports: ${error}`)
+		}
 
-		console.log('Getting audio sessions...')
-		await getAudioSessions()
-		console.log('Audio sessions loaded')
+		// Get audio sessions - critical for Windows functionality
+		try {
+			console.log('Getting audio sessions...')
+			const sessions = await getAudioSessions()
+			console.log(`Audio sessions loaded: ${sessions.length} sessions found`)
+
+			// If no sessions on Windows, that's a problem
+			if (sessions.length === 0 && navigator.platform.includes('Win')) {
+				console.warn('No audio sessions found on Windows - COM initialization may have failed')
+			}
+		} catch (error) {
+			console.error('Failed to get audio sessions:', error)
+			errors.push(`Audio sessions: ${error}`)
+
+			// Set some default mock data so the UI still works
+			audioSessions.set([{
+				process_id: 0,
+				process_name: "Master",
+				display_name: "Master Volume (Error loading sessions)",
+				volume: 50,
+				is_muted: false
+			}])
+		}
 
 		// Try auto-connect but don't wait for it
 		connectSerial().catch(err => {
 			console.log('Auto-connect failed (this is normal if no device is connected):', err)
 		})
 
-		console.log('Mixer initialization complete!')
+		if (errors.length > 0) {
+			console.warn('Mixer initialization completed with errors:', errors)
+		} else {
+			console.log('Mixer initialization complete!')
+		}
 	} catch (error) {
 		console.error('Failed to initialize mixer:', error)
 		throw error

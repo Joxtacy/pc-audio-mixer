@@ -747,8 +747,12 @@ pub struct WindowsAudioManager;
 
 impl WindowsAudioManager {
     pub fn new() -> Self {
+        log::info!("Initializing Windows Audio Manager");
         if let Err(e) = ensure_com_initialized() {
             log::error!("Failed to initialize COM for Windows Audio: {}", e);
+            log::error!("This will prevent audio session enumeration from working");
+        } else {
+            log::info!("COM initialized successfully for Windows Audio");
         }
         Self
     }
