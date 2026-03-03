@@ -22,8 +22,11 @@
       }
     ],
     "security": {
-      "csp": null
-    }
+      "csp": null,
+      "dangerousDisableAssetCspModification": false,
+      "devCsp": null
+    },
+    "devtools": true
   },
   "bundle": {
     "active": true,

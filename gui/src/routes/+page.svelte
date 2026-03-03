@@ -9,12 +9,21 @@
 	let initError: string | null = null
 
 	onMount(async () => {
+		// Add a timeout to prevent infinite hanging
+		const initTimeout = setTimeout(() => {
+			console.error('Initialization timeout after 10 seconds')
+			initError = 'Initialization timed out. The application may not be configured correctly.'
+			isInitialized = true
+		}, 10000)
+
 		try {
 			console.log('Page mounted, initializing mixer...')
 			await initializeMixer()
+			clearTimeout(initTimeout)
 			isInitialized = true
 			console.log('Page initialization complete')
 		} catch (error) {
+			clearTimeout(initTimeout)
 			console.error('Failed to initialize:', error)
 			initError = error instanceof Error ? error.message : String(error)
 			// Still set initialized to true so we can show the error

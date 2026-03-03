@@ -194,27 +194,35 @@ export async function getAudioSessions(): Promise<AudioSession[]> {
 }
 
 // Wait for Tauri to be ready
-async function waitForTauri(maxRetries = 50, retryDelay = 100): Promise<void> {
+async function waitForTauri(maxRetries = 10, retryDelay = 200): Promise<void> {
+	console.log('Checking for Tauri context...')
+
 	// Check immediately if Tauri is available
 	if (isTauriContext()) {
 		console.log('Tauri context ready immediately')
 		return
 	}
 
-	// If not in Tauri context after first check, likely in browser
-	if (maxRetries === 50 && typeof window !== 'undefined') {
+	// Try a few times with shorter delay
+	for (let i = 0; i < maxRetries; i++) {
+		console.log(`Waiting for Tauri context... attempt ${i + 1}/${maxRetries}`)
+		await new Promise(resolve => setTimeout(resolve, retryDelay))
+
+		if (isTauriContext()) {
+			console.log(`Tauri context ready after ${i + 1} attempts`)
+			return
+		}
+	}
+
+	// If we're in a browser, show a helpful message
+	if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
 		console.warn('Not running in Tauri context - possibly opened in browser')
 		throw new Error('This application must be run as a Tauri desktop app, not in a browser. Please run "pnpm tauri dev" and use the native window.')
 	}
 
-	for (let i = 0; i < maxRetries; i++) {
-		if (isTauriContext()) {
-			console.log(`Tauri context ready after ${i} attempts`)
-			return
-		}
-		await new Promise(resolve => setTimeout(resolve, retryDelay))
-	}
-	throw new Error('Tauri context not available after maximum retries')
+	// Otherwise, something is wrong with the Tauri initialization
+	console.error('Tauri context not available after maximum retries. Window object:', window)
+	throw new Error('Failed to initialize Tauri context. The application may not be running correctly.')
 }
 
 // Initialize the mixer on app start

@@ -152,6 +152,13 @@ pub fn run() {
 
             // Setup window close handler to minimize to tray
             if let Some(window) = app.get_webview_window("main") {
+                // Enable DevTools in debug builds
+                #[cfg(debug_assertions)]
+                {
+                    window.open_devtools();
+                    log::info!("DevTools enabled for debugging");
+                }
+
                 let window_clone = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
