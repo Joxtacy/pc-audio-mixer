@@ -60,8 +60,10 @@ async fn connect_serial(
                 }
 
                 // Use pot1 to control master volume directly
-                let (pot1, _pot2, _pot3) = data.to_percentages();
-                let _ = audio_manager.set_master_volume(pot1);
+                let percentages = data.to_percentages();
+                if !percentages.is_empty() {
+                    let _ = audio_manager.set_master_volume(percentages[0]);
+                }
             }
         });
     }
@@ -120,8 +122,8 @@ async fn get_master_volume(state: State<'_, AppState>) -> Result<f32, String> {
 async fn get_mixer_channels(_state: State<'_, AppState>) -> Result<Vec<MixerChannel>, String> {
     let mut channels = Vec::new();
 
-    // Only return 3 physical channels
-    for i in 1..=3 {
+    // Return 8 physical channels
+    for i in 1..=8 {
         channels.push(MixerChannel {
             id: i,
             value: 0.0,

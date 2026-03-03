@@ -45,11 +45,18 @@
 		padding: 20px;
 		background: rgba(40, 40, 40, 0.4);
 		border-radius: 8px;
+		overflow-x: auto;
+	}
+
+	@media (max-width: 1200px) {
+		.faders-container {
+			flex-wrap: wrap;
+		}
 	}
 
 	@media (max-width: 768px) {
 		.faders-container {
-			flex-wrap: wrap;
+			justify-content: flex-start;
 		}
 	}
 </style>

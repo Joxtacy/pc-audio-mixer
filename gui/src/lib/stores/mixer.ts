@@ -19,6 +19,11 @@ export interface PotentiometerData {
 	pot1: number
 	pot2: number
 	pot3: number
+	pot4: number
+	pot5: number
+	pot6: number
+	pot7: number
+	pot8: number
 }
 
 export interface ConnectionStatus {
@@ -51,6 +56,11 @@ export const potentiometerData = writable<PotentiometerData>({
 	pot1: 0,
 	pot2: 0,
 	pot3: 0,
+	pot4: 0,
+	pot5: 0,
+	pot6: 0,
+	pot7: 0,
+	pot8: 0,
 })
 
 export const connectionStatus = writable<ConnectionStatus>({

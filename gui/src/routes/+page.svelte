@@ -94,7 +94,7 @@
 	.app-content {
 		flex: 1;
 		padding: 20px;
-		max-width: 1200px;
+		max-width: 1400px;
 		margin: 0 auto;
 		width: 90%; /* This at 100% makes it overflow to the right */
 	}

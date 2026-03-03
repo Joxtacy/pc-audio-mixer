@@ -2,24 +2,42 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PotentiometerData {
+    #[serde(default)]
     pub pot1: u16,
+    #[serde(default)]
     pub pot2: u16,
+    #[serde(default)]
     pub pot3: u16,
+    #[serde(default)]
+    pub pot4: u16,
+    #[serde(default)]
+    pub pot5: u16,
+    #[serde(default)]
+    pub pot6: u16,
+    #[serde(default)]
+    pub pot7: u16,
+    #[serde(default)]
+    pub pot8: u16,
 }
 
 impl PotentiometerData {
-    pub fn to_percentages(&self) -> (f32, f32, f32) {
+    pub fn to_percentages(&self) -> Vec<f32> {
         // Helper function to round to nearest 2%
         let round_to_2 = |val: f32| -> f32 {
             let percentage = (val / 1023.0) * 100.0;
             (percentage / 2.0).round() * 2.0
         };
 
-        (
+        vec![
             round_to_2(self.pot1 as f32),
             round_to_2(self.pot2 as f32),
             round_to_2(self.pot3 as f32),
-        )
+            round_to_2(self.pot4 as f32),
+            round_to_2(self.pot5 as f32),
+            round_to_2(self.pot6 as f32),
+            round_to_2(self.pot7 as f32),
+            round_to_2(self.pot8 as f32),
+        ]
     }
 }
 
