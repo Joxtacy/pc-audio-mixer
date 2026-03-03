@@ -150,6 +150,19 @@ pub fn run() {
 
             app.manage(app_state);
 
+            // Setup window close handler to minimize to tray
+            if let Some(window) = app.get_webview_window("main") {
+                let window_clone = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        // Prevent the window from closing
+                        api.prevent_close();
+                        // Hide the window instead
+                        let _ = window_clone.hide();
+                    }
+                });
+            }
+
             // Setup system tray
             #[cfg(desktop)]
             {
@@ -163,6 +176,8 @@ pub fn run() {
                 let menu = Menu::with_items(app, &[&show, &hide, &quit])?;
 
                 let _tray = TrayIconBuilder::new()
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .icon_as_template(true)
                     .menu(&menu)
                     .tooltip("PC Audio Mixer")
                     .on_menu_event(|app, event| match event.id.as_ref() {
@@ -181,18 +196,6 @@ pub fn run() {
                             }
                         }
                         _ => {}
-                    })
-                    .on_tray_icon_event(|tray, event| {
-                        if let TrayIconEvent::Click { .. } = event {
-                            if let Some(app) = tray.app_handle().get_webview_window("main") {
-                                if app.is_visible().unwrap_or(false) {
-                                    let _ = app.hide();
-                                } else {
-                                    let _ = app.show();
-                                    let _ = app.set_focus();
-                                }
-                            }
-                        }
                     })
                     .build(app)?;
             }
