@@ -5,7 +5,7 @@ import { derived, writable } from 'svelte/store'
 // Declare Tauri internals on window
 declare global {
 	interface Window {
-		__TAURI_INTERNALS__?: any
+		__TAURI_INTERNALS__?: unknown
 	}
 }
 

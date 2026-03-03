@@ -8,10 +8,7 @@
 </script>
 
 <div class="fader-container" role="region" aria-label="Channel {channel.id} fader">
-	<div class="fader-header">
-		<span class="channel-number">CH {channel.id}</span>
-		<span class="channel-type">Physical</span>
-	</div>
+	<div class="fader-header"><span class="channel-number">CH {channel.id}</span></div>
 
 	<div class="fader-body">
 		<div class="volume-display">{Math.round(value)}%</div>
@@ -19,14 +16,6 @@
 		<div class="fader-track">
 			<div class="fader-fill" style="height: {100 - faderHeight}%"></div>
 			<input type="range" min="0" max="100" step="1" {value} class="fader-slider" disabled>
-		</div>
-
-		<div class="scale-marks">
-			<div class="mark" style="bottom: 100%">100</div>
-			<div class="mark" style="bottom: 75%">75</div>
-			<div class="mark" style="bottom: 50%">50</div>
-			<div class="mark" style="bottom: 25%">25</div>
-			<div class="mark" style="bottom: 0%">0</div>
 		</div>
 	</div>
 
@@ -39,33 +28,24 @@
 	.fader-container {
 		display: flex;
 		flex-direction: column;
-		width: 80px;
-		height: 400px;
-		background: #2a2a2a;
-		border-radius: 8px;
-		padding: 10px;
-		margin: 0 5px;
-		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-		transition: all 0.3s ease;
+		width: 60px;
+		height: 320px;
+		background: transparent;
+		padding: 8px;
+		margin: 0 8px;
 	}
 
 	.fader-header {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		margin-bottom: 10px;
+		margin-bottom: 8px;
 	}
 
 	.channel-number {
-		font-weight: bold;
-		font-size: 14px;
-		color: #fff;
-	}
-
-	.channel-type {
-		font-size: 10px;
-		color: #888;
-		text-transform: uppercase;
+		font-weight: 500;
+		font-size: 12px;
+		color: rgba(255, 255, 255, 0.9);
 	}
 
 	.fader-body {
@@ -74,23 +54,23 @@
 		flex-direction: column;
 		align-items: center;
 		position: relative;
+		padding: 0 4px;
 	}
 
 	.volume-display {
-		font-size: 16px;
-		font-weight: bold;
-		color: #4a9eff;
-		margin-bottom: 10px;
+		font-size: 13px;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.85);
+		margin-bottom: 8px;
 	}
 
 	.fader-track {
 		position: relative;
-		width: 40px;
+		width: 6px;
 		height: 200px;
-		background: #1a1a1a;
-		border-radius: 20px;
-		overflow: hidden;
-		box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+		background: rgba(255, 255, 255, 0.08);
+		border-radius: 3px;
+		overflow: visible;
 	}
 
 	.fader-fill {
@@ -98,9 +78,10 @@
 		bottom: 0;
 		left: 0;
 		right: 0;
-		background: linear-gradient(to top, #4a9eff, #6ab7ff);
-		border-radius: 20px;
+		background: rgba(255, 255, 255, 0.95);
+		border-radius: 3px;
 		transition: height 0.1s ease;
+		box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
 	}
 
 	.fader-slider {
@@ -118,32 +99,17 @@
 		cursor: default;
 	}
 
-	.scale-marks {
-		position: absolute;
-		right: -25px;
-		top: 0;
-		bottom: 0;
-		width: 20px;
-	}
-
-	.mark {
-		position: absolute;
-		font-size: 9px;
-		color: #666;
-		transform: translateY(50%);
-	}
-
 	.fader-footer {
-		height: 40px;
+		height: 30px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		margin-top: 10px;
+		margin-top: 8px;
 	}
 
 	.pot-indicator {
-		font-size: 11px;
-		color: #4a9eff;
+		font-size: 10px;
+		color: rgba(255, 255, 255, 0.6);
 		text-align: center;
 	}
 </style>

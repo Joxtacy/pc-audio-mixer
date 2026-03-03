@@ -2,16 +2,16 @@
 	import { channelValues } from '$lib/stores/mixer'
 	import Fader from './Fader.svelte'
 
-	let _channels = $channelValues
+	let channels = $channelValues
 
-	$: _channels = $channelValues
+	$: channels = $channelValues
 </script>
 
 <div class="mixer-container">
 	<h2 class="mixer-title">Audio Mixer</h2>
 
 	<div class="faders-container">
-		{#each _channels as channel (channel.id)}
+		{#each channels as channel (channel.id)}
 			<Fader {channel} value={channel.value} />
 		{/each}
 	</div>
@@ -22,18 +22,19 @@
 		display: flex;
 		flex-direction: column;
 		padding: 20px;
-		background: #1e1e1e;
+		background: rgba(30, 30, 30, 0.6);
+		backdrop-filter: blur(20px);
 		border-radius: 12px;
-		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 	}
 
 	.mixer-title {
 		text-align: center;
-		color: #fff;
+		color: rgba(255, 255, 255, 0.95);
 		margin-bottom: 20px;
-		font-size: 24px;
-		font-weight: 300;
-		letter-spacing: 2px;
+		font-size: 20px;
+		font-weight: 400;
+		letter-spacing: 1px;
 		text-transform: uppercase;
 	}
 
@@ -42,7 +43,7 @@
 		justify-content: center;
 		gap: 10px;
 		padding: 20px;
-		background: #252525;
+		background: rgba(40, 40, 40, 0.4);
 		border-radius: 8px;
 	}
 

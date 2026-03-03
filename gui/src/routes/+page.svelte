@@ -1,26 +1,26 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import { initializeMixer } from "$lib/stores/mixer";
-	import StatusBar from "$lib/components/StatusBar.svelte";
-	import Mixer from "$lib/components/Mixer.svelte";
-	import ApplicationList from "$lib/components/ApplicationList.svelte";
+	import { onMount } from 'svelte'
+	import ApplicationList from '$lib/components/ApplicationList.svelte'
+	import Mixer from '$lib/components/Mixer.svelte'
+	import StatusBar from '$lib/components/StatusBar.svelte'
+	import { initializeMixer } from '$lib/stores/mixer'
 
-	let isInitialized = false;
-	let initError: string | null = null;
+	let isInitialized = false
+	let initError: string | null = null
 
 	onMount(async () => {
 		try {
-			console.log('Page mounted, initializing mixer...');
-			await initializeMixer();
-			isInitialized = true;
-			console.log('Page initialization complete');
+			console.log('Page mounted, initializing mixer...')
+			await initializeMixer()
+			isInitialized = true
+			console.log('Page initialization complete')
 		} catch (error) {
-			console.error('Failed to initialize:', error);
-			initError = error instanceof Error ? error.message : String(error);
+			console.error('Failed to initialize:', error)
+			initError = error instanceof Error ? error.message : String(error)
 			// Still set initialized to true so we can show the error
-			isInitialized = true;
+			isInitialized = true
 		}
-	});
+	})
 </script>
 
 <main class="app">
@@ -57,9 +57,10 @@
 	:global(body) {
 		margin: 0;
 		padding: 0;
-		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-			Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
-		background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
+		font-family:
+			-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans",
+			"Helvetica Neue", sans-serif;
+		background: linear-gradient(135deg, #1e1e1e, #2a2a2a);
 		color: #f0f0f0;
 		min-height: 100vh;
 	}
@@ -95,7 +96,7 @@
 		padding: 20px;
 		max-width: 1200px;
 		margin: 0 auto;
-		width: 100%;
+		width: 90%; /* This at 100% makes it overflow to the right */
 	}
 
 	.loading {

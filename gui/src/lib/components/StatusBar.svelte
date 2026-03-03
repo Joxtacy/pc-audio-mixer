@@ -1,49 +1,49 @@
 <script lang="ts">
 	import {
+		availablePorts,
 		type ConnectionStatus,
+		connectionStatus,
 		connectSerial,
 		disconnectSerial,
 		listSerialPorts,
 		type SerialPortInfo,
-		connectionStatus,
-		availablePorts,
-	} from "$lib/stores/mixer";
+	} from '$lib/stores/mixer'
 
-	let status: ConnectionStatus = { connected: false, port: null, error: null };
-	let ports: SerialPortInfo[] = [];
-	let selectedPort: string = "";
-	let showPortSelector = false;
-	let isConnecting = false;
+	let status: ConnectionStatus = { connected: false, port: null, error: null }
+	let ports: SerialPortInfo[] = []
+	let selectedPort: string = ''
+	let showPortSelector = false
+	let isConnecting = false
 
-	$: status = $connectionStatus;
-	$: ports = $availablePorts;
+	$: status = $connectionStatus
+	$: ports = $availablePorts
 
 	async function handleConnect() {
-		isConnecting = true;
+		isConnecting = true
 		try {
-			await connectSerial(selectedPort || undefined);
+			await connectSerial(selectedPort || undefined)
 		} finally {
-			isConnecting = false;
-			showPortSelector = false;
+			isConnecting = false
+			showPortSelector = false
 		}
 	}
 
 	async function handleDisconnect() {
-		await disconnectSerial();
+		await disconnectSerial()
 	}
 
-	async function togglePortSelector() {
+	async function _togglePortSelector() {
 		if (!showPortSelector) {
-			await listSerialPorts();
+			await listSerialPorts()
 		}
-		showPortSelector = !showPortSelector;
+		showPortSelector = !showPortSelector
 	}
 
-	async function handleReconnect() {
-		await handleDisconnect();
+	async function _handleReconnect() {
+		await handleDisconnect()
 		setTimeout(() => {
-			handleConnect();
-		}, 500);
+			handleConnect()
+		}, 500)
 	}
 </script>
 
@@ -63,16 +63,10 @@
 
 	<div class="status-controls">
 		{#if status.connected}
-			<button
-				type="button"
-				class="btn btn-disconnect"
-				on:click={handleDisconnect}
-			>
+			<button type="button" class="btn btn-disconnect" on:click={handleDisconnect}>
 				Disconnect
 			</button>
-			<button type="button" class="btn btn-reconnect" on:click={handleReconnect}
-				>Reconnect</button
-			>
+			<button type="button" class="btn btn-reconnect" on:click={handleReconnect}>Reconnect</button>
 		{:else}
 			<button
 				type="button"
@@ -82,11 +76,7 @@
 			>
 				{isConnecting ? "Connecting..." : "Auto Connect"}
 			</button>
-			<button
-				type="button"
-				class="btn btn-select"
-				on:click={togglePortSelector}
-			>
+			<button type="button" class="btn btn-select" on:click={togglePortSelector}>
 				Select Port
 			</button>
 		{/if}
@@ -99,9 +89,7 @@
 				<select bind:value={selectedPort} class="port-select">
 					<option value="">Auto-detect</option>
 					{#each ports as port}
-						<option value={port.port_name}
-							>{port.port_name} - {port.description}</option
-						>
+						<option value={port.port_name}>{port.port_name} - {port.description}</option>
 					{/each}
 				</select>
 				<button
@@ -114,9 +102,7 @@
 				</button>
 			{:else}
 				<p class="no-ports">No serial ports detected</p>
-				<button type="button" class="btn" on:click={listSerialPorts}
-					>Refresh</button
-				>
+				<button type="button" class="btn" on:click={listSerialPorts}>Refresh</button>
 			{/if}
 		</div>
 	{/if}

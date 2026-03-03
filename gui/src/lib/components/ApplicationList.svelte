@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { audioSessions } from '$lib/stores/mixer';
+	import { audioSessions } from '$lib/stores/mixer'
 
 	function getVolumeIcon(volume: number): string {
 		if (volume === 0) {
