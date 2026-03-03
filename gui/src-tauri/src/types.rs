@@ -11,7 +11,7 @@ impl PotentiometerData {
     pub fn to_percentages(&self) -> (f32, f32, f32) {
         // Helper function to round to nearest 2%
         let round_to_2 = |val: f32| -> f32 {
-            let percentage = (val / 4095.0) * 100.0;
+            let percentage = (val / 1023.0) * 100.0;
             (percentage / 2.0).round() * 2.0
         };
 
