@@ -1,44 +1,33 @@
 use anyhow::{anyhow, Result};
-use std::sync::Once;
 
 use crate::audio::AudioManager;
 use crate::types::AudioSession;
 
-static INIT_COM: Once = Once::new();
-
+/// Initialize COM on the current thread.
+///
+/// COM must be initialized per-thread on Windows. This function is safe to call
+/// multiple times on the same thread (returns S_FALSE) and handles the case where
+/// the thread was already initialized with a different apartment model by
+/// Tauri/WebView2 (RPC_E_CHANGED_MODE).
 fn ensure_com_initialized() -> Result<()> {
     #[cfg(target_os = "windows")]
     {
-        use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
         use windows_sys::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
-        // Store the actual HRESULT to avoid race conditions
-        static COM_INIT_RESULT: AtomicI32 = AtomicI32::new(0);
-        static INIT_ATTEMPTED: AtomicBool = AtomicBool::new(false);
+        const RPC_E_CHANGED_MODE: i32 = -2147417850; // 0x80010106
 
-        INIT_COM.call_once(|| {
-            // SAFETY: CoInitializeEx is thread-safe and we only call it once.
-            // COINIT_MULTITHREADED is required for Windows Audio Session APIs.
-            unsafe {
-                let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_MULTITHREADED as u32);
-                COM_INIT_RESULT.store(hr, Ordering::SeqCst);
-                INIT_ATTEMPTED.store(true, Ordering::SeqCst);
-
-                if hr >= 0 {
-                    log::info!("COM initialized successfully");
-                } else {
-                    log::error!("Failed to initialize COM: 0x{:08x}", hr);
-                }
+        // SAFETY: CoInitializeEx is safe to call multiple times per thread.
+        // S_FALSE is returned if COM is already initialized with the same mode.
+        // RPC_E_CHANGED_MODE is returned if already initialized with a different
+        // mode (e.g., STA by Tauri/WebView2), which is fine — COM is still usable.
+        unsafe {
+            let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_MULTITHREADED as u32);
+            if hr >= 0 || hr == RPC_E_CHANGED_MODE {
+                Ok(())
+            } else {
+                log::error!("Failed to initialize COM on thread: 0x{:08x}", hr);
+                Err(anyhow!("COM initialization failed: 0x{:08x}", hr))
             }
-        });
-
-        let hr = COM_INIT_RESULT.load(Ordering::SeqCst);
-        if hr >= 0 || hr == 0x00000001
-        /* S_FALSE - already initialized */
-        {
-            Ok(())
-        } else {
-            Err(anyhow!("COM initialization failed: 0x{:08x}", hr))
         }
     }
 
@@ -264,6 +253,9 @@ mod windows_audio {
     }
 
     pub unsafe fn enumerate_audio_sessions_internal() -> Result<Vec<AudioSession>> {
+        // COM must be initialized on the calling thread (tokio worker threads)
+        ensure_com_initialized()?;
+
         let mut sessions = Vec::new();
 
         // Get the default audio device
@@ -464,6 +456,9 @@ mod windows_audio {
     }
 
     pub unsafe fn set_app_volume_internal(process_id: u32, volume: f32) -> Result<()> {
+        // COM must be initialized on the calling thread (tokio worker threads)
+        ensure_com_initialized()?;
+
         // Get the default audio device
         let device = get_default_audio_device()?;
         let device_vtbl = *(device as *mut *mut IMMDeviceVtbl);
@@ -604,6 +599,9 @@ mod windows_audio {
     }
 
     pub unsafe fn get_master_volume_internal() -> Result<f32> {
+        // COM must be initialized on the calling thread (tokio worker threads)
+        ensure_com_initialized()?;
+
         let device = get_default_audio_device()?;
         let device_vtbl = *(device as *mut *mut IMMDeviceVtbl);
 
