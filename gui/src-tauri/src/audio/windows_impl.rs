@@ -335,7 +335,9 @@ mod windows_audio {
 
         if hr < 0 {
             log::error!("Failed to get session count: 0x{:08x}", hr);
-        } else if count > 0 && count < 1000 {
+        } else {
+            log::debug!("Audio session count: {}", count);
+            if count > 0 && count < 1000 {
             // Sanity check to prevent excessive iteration
             // Enumerate sessions
             for i in 0..count {
@@ -343,6 +345,7 @@ mod windows_audio {
                 let hr = ((*session_enum_vtbl).GetSession)(session_enum, i, &mut session_control);
 
                 if hr < 0 {
+                    log::debug!("Session {}: GetSession failed 0x{:08x}", i, hr);
                     continue;
                 }
 
@@ -350,11 +353,12 @@ mod windows_audio {
                 let session_ctrl_vtbl = *(session_control as *mut *mut IAudioSessionControlVtbl);
                 let mut session_control2: *mut IAudioSessionControl2 = ptr::null_mut();
 
+                // IID_IAudioSessionControl2 = {bfb7ff88-7239-4fc9-8fa2-07c950be9c6d}
                 let iid_control2 = GUID {
                     data1: 0xbfb7ff88,
                     data2: 0x7239,
                     data3: 0x4fc9,
-                    data4: [0x8f, 0xa5, 0xca, 0x10, 0xd3, 0x5d, 0x6e, 0xe7],
+                    data4: [0x8f, 0xa2, 0x07, 0xc9, 0x50, 0xbe, 0x9c, 0x6d],
                 };
 
                 let hr = ((*session_ctrl_vtbl).parent.QueryInterface)(
@@ -362,6 +366,8 @@ mod windows_audio {
                     &iid_control2,
                     &mut session_control2 as *mut _ as *mut *mut c_void,
                 );
+
+                log::debug!("Session {}: QueryInterface hr=0x{:08x} null={}", i, hr, session_control2.is_null());
 
                 if hr >= 0 && !session_control2.is_null() {
                     let session_ctrl2_vtbl =
@@ -371,6 +377,8 @@ mod windows_audio {
                     let mut process_id: u32 = 0;
                     let hr =
                         ((*session_ctrl2_vtbl).GetProcessId)(session_control2, &mut process_id);
+
+                    log::debug!("Session {}: process_id={}, hr=0x{:08x}", i, process_id, hr);
 
                     if hr >= 0 && process_id != 0 {
                         // Get process name
@@ -444,6 +452,7 @@ mod windows_audio {
                 }
 
                 ((*session_ctrl_vtbl).parent.Release)(session_control as *mut IUnknown);
+            }
             }
         }
 
@@ -519,11 +528,12 @@ mod windows_audio {
             let session_ctrl_vtbl = *(session_control as *mut *mut IAudioSessionControlVtbl);
             let mut session_control2: *mut IAudioSessionControl2 = ptr::null_mut();
 
+            // IID_IAudioSessionControl2 = {bfb7ff88-7239-4fc9-8fa2-07c950be9c6d}
             let iid_control2 = GUID {
                 data1: 0xbfb7ff88,
                 data2: 0x7239,
                 data3: 0x4fc9,
-                data4: [0x8f, 0xa5, 0xca, 0x10, 0xd3, 0x5d, 0x6e, 0xe7],
+                data4: [0x8f, 0xa2, 0x07, 0xc9, 0x50, 0xbe, 0x9c, 0x6d],
             };
 
             let hr = ((*session_ctrl_vtbl).parent.QueryInterface)(
@@ -624,6 +634,135 @@ mod windows_audio {
 
         // Clamp to valid percentage range
         Ok((volume_level * 100.0).clamp(0.0, 100.0))
+    }
+
+    /// Set volumes for multiple processes in a single COM enumeration pass.
+    pub unsafe fn set_volumes_batch_internal(volumes: &[(u32, f32)]) -> Result<()> {
+        ensure_com_initialized()?;
+
+        let device = get_default_audio_device()?;
+        let device_vtbl = *(device as *mut *mut IMMDeviceVtbl);
+
+        // Handle master volume if present
+        for &(pid, vol) in volumes {
+            if pid == 0 {
+                let endpoint_volume = get_endpoint_volume(device)?;
+                let endpoint_vtbl = *(endpoint_volume as *mut *mut IAudioEndpointVolumeVtbl);
+                let volume_scalar = (vol / 100.0).clamp(0.0, 1.0);
+                let _ = ((*endpoint_vtbl).SetMasterVolumeLevelScalar)(
+                    endpoint_volume,
+                    volume_scalar,
+                    ptr::null_mut(),
+                );
+                ((*endpoint_vtbl).parent.Release)(endpoint_volume);
+                break;
+            }
+        }
+
+        // Collect non-master volumes to set
+        let app_volumes: Vec<(u32, f32)> = volumes.iter()
+            .filter(|(pid, _)| *pid != 0)
+            .copied()
+            .collect();
+
+        if app_volumes.is_empty() {
+            ((*device_vtbl).parent.Release)(device);
+            return Ok(());
+        }
+
+        // Single enumeration for all app volumes
+        let session_manager = match get_audio_session_manager(device) {
+            Ok(mgr) => mgr,
+            Err(e) => {
+                ((*device_vtbl).parent.Release)(device);
+                return Err(e);
+            }
+        };
+        let session_mgr_vtbl = *(session_manager as *mut *mut IAudioSessionManager2Vtbl);
+
+        let mut session_enum: *mut IAudioSessionEnumerator = ptr::null_mut();
+        let hr = ((*session_mgr_vtbl).GetSessionEnumerator)(session_manager, &mut session_enum);
+
+        if hr < 0 {
+            ((*session_mgr_vtbl).parent.parent.Release)(session_manager);
+            ((*device_vtbl).parent.Release)(device);
+            return Err(anyhow!("Failed to get session enumerator: 0x{:08x}", hr));
+        }
+
+        let session_enum_vtbl = *(session_enum as *mut *mut IAudioSessionEnumeratorVtbl);
+
+        let mut count: i32 = 0;
+        let _ = ((*session_enum_vtbl).GetCount)(session_enum, &mut count);
+
+        // IID_IAudioSessionControl2 = {bfb7ff88-7239-4fc9-8fa2-07c950be9c6d}
+        let iid_control2 = GUID {
+            data1: 0xbfb7ff88,
+            data2: 0x7239,
+            data3: 0x4fc9,
+            data4: [0x8f, 0xa2, 0x07, 0xc9, 0x50, 0xbe, 0x9c, 0x6d],
+        };
+
+        let iid_simple_volume = GUID {
+            data1: 0x87CE5498,
+            data2: 0x68D6,
+            data3: 0x44E5,
+            data4: [0x92, 0x15, 0x6D, 0xA4, 0x7E, 0xF8, 0x83, 0xD8],
+        };
+
+        for i in 0..count {
+            let mut session_control: *mut IAudioSessionControl = ptr::null_mut();
+            let hr = ((*session_enum_vtbl).GetSession)(session_enum, i, &mut session_control);
+            if hr < 0 { continue; }
+
+            let session_ctrl_vtbl = *(session_control as *mut *mut IAudioSessionControlVtbl);
+            let mut session_control2: *mut IAudioSessionControl2 = ptr::null_mut();
+
+            let hr = ((*session_ctrl_vtbl).parent.QueryInterface)(
+                session_control as *mut IUnknown,
+                &iid_control2,
+                &mut session_control2 as *mut _ as *mut *mut c_void,
+            );
+
+            if hr >= 0 && !session_control2.is_null() {
+                let session_ctrl2_vtbl = *(session_control2 as *mut *mut IAudioSessionControl2Vtbl);
+
+                let mut pid: u32 = 0;
+                let hr = ((*session_ctrl2_vtbl).GetProcessId)(session_control2, &mut pid);
+
+                if hr >= 0 {
+                    if let Some(&(_, vol)) = app_volumes.iter().find(|(p, _)| *p == pid) {
+                        // Set volume via ISimpleAudioVolume
+                        let mut simple_volume: *mut ISimpleAudioVolume = ptr::null_mut();
+                        let hr = ((*session_ctrl_vtbl).parent.QueryInterface)(
+                            session_control as *mut IUnknown,
+                            &iid_simple_volume,
+                            &mut simple_volume as *mut _ as *mut *mut c_void,
+                        );
+
+                        if hr >= 0 && !simple_volume.is_null() {
+                            let simple_vol_vtbl = *(simple_volume as *mut *mut ISimpleAudioVolumeVtbl);
+                            let volume_scalar = (vol / 100.0).clamp(0.0, 1.0);
+                            let _ = ((*simple_vol_vtbl).SetMasterVolume)(
+                                simple_volume,
+                                volume_scalar,
+                                ptr::null_mut(),
+                            );
+                            ((*simple_vol_vtbl).parent.Release)(simple_volume as *mut IUnknown);
+                        }
+                    }
+                }
+
+                ((*session_ctrl2_vtbl).parent.parent.Release)(session_control2 as *mut IUnknown);
+            }
+
+            ((*session_ctrl_vtbl).parent.Release)(session_control as *mut IUnknown);
+        }
+
+        ((*session_enum_vtbl).parent.Release)(session_enum as *mut IUnknown);
+        ((*session_mgr_vtbl).parent.parent.Release)(session_manager);
+        ((*device_vtbl).parent.Release)(device);
+
+        Ok(())
     }
 
     // COM Interface definitions (vtables)
@@ -831,6 +970,28 @@ impl AudioManager for WindowsAudioManager {
         #[cfg(not(target_os = "windows"))]
         {
             Ok(50.0)
+        }
+    }
+
+    fn set_volumes_batch(&self, volumes: &[(u32, f32)]) -> Result<()> {
+        if volumes.is_empty() {
+            return Ok(());
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            unsafe {
+                windows_audio::set_volumes_batch_internal(volumes)
+                    .map_err(|e| anyhow!("Failed to set volumes batch: {}", e))
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            for (pid, vol) in volumes {
+                log::info!("Would set volume for process {} to {}%", pid, vol);
+            }
+            Ok(())
         }
     }
 }

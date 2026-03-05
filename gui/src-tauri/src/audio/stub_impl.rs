@@ -77,6 +77,13 @@ impl AudioManager for StubAudioManager {
     fn get_master_volume(&self) -> Result<f32> {
         Ok(50.0)
     }
+
+    fn set_volumes_batch(&self, volumes: &[(u32, f32)]) -> Result<()> {
+        for (pid, vol) in volumes {
+            println!("Stub: Setting volume for process {} to {}%", pid, vol);
+        }
+        Ok(())
+    }
 }
 
 impl Default for StubAudioManager {

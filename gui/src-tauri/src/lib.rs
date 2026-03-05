@@ -62,12 +62,12 @@ async fn connect_serial(
                     log::error!("Failed to emit pot-data event: {}", e);
                 }
 
-                // Apply mapped volumes — clone data out of locks to avoid holding
-                // them across potentially slow audio manager calls
+                // Build batch of volume changes and apply in a single COM pass
                 let percentages = data.to_percentages();
                 let mappings = pot_mappings.read().await.clone();
                 let sessions = last_sessions.read().await.clone();
 
+                let mut volume_batch: Vec<(u32, f32)> = Vec::new();
                 for mapping in mappings.iter() {
                     let idx = (mapping.pot_index as usize).saturating_sub(1);
                     if idx >= percentages.len() {
@@ -76,16 +76,16 @@ async fn connect_serial(
                     let volume = percentages[idx];
 
                     if mapping.process_name.eq_ignore_ascii_case("master") {
-                        let _ = audio_manager.set_master_volume(volume);
-                    } else {
-                        // Find matching session by process name (case-insensitive)
-                        if let Some(session) = sessions.iter().find(|s| {
-                            s.process_name.eq_ignore_ascii_case(&mapping.process_name)
-                        }) {
-                            let _ =
-                                audio_manager.set_app_volume(session.process_id, volume);
-                        }
+                        volume_batch.push((0, volume));
+                    } else if let Some(session) = sessions.iter().find(|s| {
+                        s.process_name.eq_ignore_ascii_case(&mapping.process_name)
+                    }) {
+                        volume_batch.push((session.process_id, volume));
                     }
+                }
+
+                if !volume_batch.is_empty() {
+                    let _ = audio_manager.set_volumes_batch(&volume_batch);
                 }
             }
         });
