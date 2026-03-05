@@ -167,6 +167,9 @@ async fn set_pot_mapping(
 
         // Add new mapping if process_name provided
         if let Some(name) = process_name {
+            // Also remove any existing mapping for this process (one app = one pot)
+            mappings.retain(|m| !m.process_name.eq_ignore_ascii_case(&name));
+
             mappings.push(PotMapping {
                 pot_index,
                 process_name: name,
