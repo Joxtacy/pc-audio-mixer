@@ -56,13 +56,17 @@ async fn connect_serial(
         let last_sessions = state.last_audio_sessions.clone();
 
         tokio::spawn(async move {
+            // Track last applied volumes to skip redundant COM calls
+            let mut last_applied: std::collections::HashMap<u32, f32> =
+                std::collections::HashMap::new();
+
             while let Some(data) = rx.recv().await {
                 // Emit raw pot data
                 if let Err(e) = app_handle_clone.emit("pot-data", &data) {
                     log::error!("Failed to emit pot-data event: {}", e);
                 }
 
-                // Build batch of volume changes and apply in a single COM pass
+                // Build batch of volume changes, skipping unchanged values
                 let percentages = data.to_percentages();
                 let mappings = pot_mappings.read().await.clone();
                 let sessions = last_sessions.read().await.clone();
@@ -75,17 +79,28 @@ async fn connect_serial(
                     }
                     let volume = percentages[idx];
 
-                    if mapping.process_name.eq_ignore_ascii_case("master") {
-                        volume_batch.push((0, volume));
-                    } else if let Some(session) = sessions.iter().find(|s| {
-                        s.process_name.eq_ignore_ascii_case(&mapping.process_name)
-                    }) {
-                        volume_batch.push((session.process_id, volume));
+                    let pid = if mapping.process_name.eq_ignore_ascii_case("master") {
+                        Some(0u32)
+                    } else {
+                        sessions.iter()
+                            .find(|s| s.process_name.eq_ignore_ascii_case(&mapping.process_name))
+                            .map(|s| s.process_id)
+                    };
+
+                    if let Some(pid) = pid {
+                        // Only include if volume actually changed
+                        if last_applied.get(&pid) != Some(&volume) {
+                            volume_batch.push((pid, volume));
+                        }
                     }
                 }
 
                 if !volume_batch.is_empty() {
-                    let _ = audio_manager.set_volumes_batch(&volume_batch);
+                    if audio_manager.set_volumes_batch(&volume_batch).is_ok() {
+                        for (pid, vol) in &volume_batch {
+                            last_applied.insert(*pid, *vol);
+                        }
+                    }
                 }
             }
         });
