@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
-use crate::types::AppConfig;
+use crate::types::{AppConfig, PotMapping};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 
@@ -26,6 +26,7 @@ pub fn load_config(app_handle: &AppHandle) -> Result<AppConfig> {
             minimize_to_tray: true,
             auto_connect: true,
             theme: "dark".to_string(),
+            pot_mappings: Vec::new(),
         });
     }
 
@@ -70,5 +71,17 @@ pub fn update_settings(
 
     save_config(app_handle, &config)?;
 
+    Ok(())
+}
+
+pub fn load_pot_mappings(app_handle: &AppHandle) -> Result<Vec<PotMapping>> {
+    let config = load_config(app_handle)?;
+    Ok(config.pot_mappings)
+}
+
+pub fn save_pot_mappings(app_handle: &AppHandle, mappings: &[PotMapping]) -> Result<()> {
+    let mut config = load_config(app_handle)?;
+    config.pot_mappings = mappings.to_vec();
+    save_config(app_handle, &config)?;
     Ok(())
 }

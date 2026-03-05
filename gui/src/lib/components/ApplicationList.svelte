@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { audioSessions } from '$lib/stores/mixer'
+	import { audioSessions, potMappings, setPotMapping } from '$lib/stores/mixer'
 
 	function getVolumeIcon(volume: number): string {
 		if (volume === 0) {
@@ -28,6 +28,30 @@
 			.replace(/[<>]/g, '') // Remove potential HTML tags
 			.substring(0, 100) // Limit length
 	}
+
+	function getMappedPot(processName: string): number | null {
+		const mapping = $potMappings.find(
+			(m) => m.process_name.toLowerCase() === processName.toLowerCase()
+		)
+		return mapping ? mapping.pot_index : null
+	}
+
+	async function handlePotChange(event: Event, processName: string) {
+		const select = event.target as HTMLSelectElement
+		const value = select.value
+
+		if (value === 'none') {
+			// Find current mapping for this app and remove it
+			const currentPot = getMappedPot(processName)
+			if (currentPot !== null) {
+				await setPotMapping(currentPot, null)
+			}
+		} else {
+			const potIndex = parseInt(value, 10)
+			if (isNaN(potIndex) || potIndex < 1 || potIndex > 8) return
+			await setPotMapping(potIndex, processName)
+		}
+	}
 </script>
 
 <div class="application-list">
@@ -49,12 +73,25 @@
 						<span class="process-name"> {formatProcessName(session.process_name)} </span>
 					</div>
 
-					<div class="volume-info">
-						<span class="volume-icon"> {getVolumeIcon(session.volume)} </span>
-						<span class="volume-value"> {Math.round(session.volume)}% </span>
-						{#if session.is_muted}
-							<span class="muted-indicator">MUTED</span>
-						{/if}
+					<div class="controls">
+						<select
+							class="pot-select"
+							value={getMappedPot(session.process_name)?.toString() ?? 'none'}
+							on:change={(e) => handlePotChange(e, session.process_name)}
+						>
+							<option value="none">None</option>
+							{#each Array.from({ length: 8 }, (_, i) => i + 1) as pot}
+								<option value={pot.toString()}>Pot {pot}</option>
+							{/each}
+						</select>
+
+						<div class="volume-info">
+							<span class="volume-icon"> {getVolumeIcon(session.volume)} </span>
+							<span class="volume-value"> {Math.round(session.volume)}% </span>
+							{#if session.is_muted}
+								<span class="muted-indicator">MUTED</span>
+							{/if}
+						</div>
 					</div>
 				</li>
 			{/each}
@@ -143,6 +180,31 @@
 		color: #888;
 		font-size: 11px;
 		font-family: "Courier New", monospace;
+	}
+
+	.controls {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.pot-select {
+		background: rgba(60, 60, 60, 0.8);
+		color: #ccc;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 4px;
+		padding: 4px 8px;
+		font-size: 11px;
+		cursor: pointer;
+		outline: none;
+	}
+
+	.pot-select:hover {
+		border-color: rgba(255, 255, 255, 0.3);
+	}
+
+	.pot-select:focus {
+		border-color: rgba(100, 100, 255, 0.5);
 	}
 
 	.volume-info {

@@ -9,17 +9,18 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
-use types::{AudioSession, ConnectionStatus, MixerChannel, SerialPortInfo};
+use types::{AudioSession, ConnectionStatus, MixerChannel, PotMapping, SerialPortInfo};
 
 // Constants for magic numbers
-const AUDIO_SESSION_POLL_INTERVAL_SECS: u64 = 2;
-const MASTER_VOLUME_PROCESS_ID: u32 = 0;
+const AUDIO_SESSION_POLL_INTERVAL_MS: u64 = 500;
 
 struct AppState {
     serial_manager: Arc<SerialManager>,
     audio_manager: Arc<dyn AudioManager>,
     cancellation_token: CancellationToken,
     last_audio_sessions: Arc<RwLock<Vec<AudioSession>>>,
+    pot_mappings: Arc<RwLock<Vec<PotMapping>>>,
+    app_handle: AppHandle,
 }
 
 #[tauri::command]
@@ -48,9 +49,11 @@ async fn connect_serial(
             .await
             .map_err(|e| e.to_string())?;
 
-        // Spawn task to emit pot data events
+        // Spawn task to emit pot data events and apply mapped volumes
         let app_handle_clone = app_handle.clone();
         let audio_manager = state.audio_manager.clone();
+        let pot_mappings = state.pot_mappings.clone();
+        let last_sessions = state.last_audio_sessions.clone();
 
         tokio::spawn(async move {
             while let Some(data) = rx.recv().await {
@@ -59,10 +62,30 @@ async fn connect_serial(
                     log::error!("Failed to emit pot-data event: {}", e);
                 }
 
-                // Use pot1 to control master volume directly
+                // Apply mapped volumes — clone data out of locks to avoid holding
+                // them across potentially slow audio manager calls
                 let percentages = data.to_percentages();
-                if !percentages.is_empty() {
-                    let _ = audio_manager.set_master_volume(percentages[0]);
+                let mappings = pot_mappings.read().await.clone();
+                let sessions = last_sessions.read().await.clone();
+
+                for mapping in mappings.iter() {
+                    let idx = (mapping.pot_index as usize).saturating_sub(1);
+                    if idx >= percentages.len() {
+                        continue;
+                    }
+                    let volume = percentages[idx];
+
+                    if mapping.process_name.eq_ignore_ascii_case("master") {
+                        let _ = audio_manager.set_master_volume(volume);
+                    } else {
+                        // Find matching session by process name (case-insensitive)
+                        if let Some(session) = sessions.iter().find(|s| {
+                            s.process_name.eq_ignore_ascii_case(&mapping.process_name)
+                        }) {
+                            let _ =
+                                audio_manager.set_app_volume(session.process_id, volume);
+                        }
+                    }
                 }
             }
         });
@@ -119,6 +142,54 @@ async fn get_master_volume(state: State<'_, AppState>) -> Result<f32, String> {
 }
 
 #[tauri::command]
+async fn get_pot_mappings(state: State<'_, AppState>) -> Result<Vec<PotMapping>, String> {
+    let mappings = state.pot_mappings.read().await;
+    Ok(mappings.clone())
+}
+
+#[tauri::command]
+async fn set_pot_mapping(
+    state: State<'_, AppState>,
+    pot_index: u8,
+    process_name: Option<String>,
+) -> Result<Vec<PotMapping>, String> {
+    // Validate pot_index range
+    if !(1..=8).contains(&pot_index) {
+        return Err(format!("Invalid pot_index: {}. Must be 1-8.", pot_index));
+    }
+
+    // Update in-memory state, then release lock before I/O
+    let result = {
+        let mut mappings = state.pot_mappings.write().await;
+
+        // Remove existing mapping for this pot
+        mappings.retain(|m| m.pot_index != pot_index);
+
+        // Add new mapping if process_name provided
+        if let Some(name) = process_name {
+            mappings.push(PotMapping {
+                pot_index,
+                process_name: name,
+            });
+        }
+
+        mappings.clone()
+    }; // write lock released here
+
+    // Persist to config (outside of lock)
+    if let Err(e) = config::save_pot_mappings(&state.app_handle, &result) {
+        log::error!("Failed to save pot mappings: {}", e);
+    }
+
+    // Emit update event
+    if let Err(e) = state.app_handle.emit("pot-mappings-updated", &result) {
+        log::error!("Failed to emit pot-mappings-updated event: {}", e);
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
 async fn get_mixer_channels(_state: State<'_, AppState>) -> Result<Vec<MixerChannel>, String> {
     let mut channels = Vec::new();
 
@@ -141,11 +212,16 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
+            // Load saved pot mappings from config
+            let saved_mappings = config::load_pot_mappings(&app_handle).unwrap_or_default();
+
             let app_state = AppState {
                 serial_manager: Arc::new(SerialManager::new()),
                 audio_manager: Arc::new(WindowsAudioManager::new()),
                 cancellation_token: CancellationToken::new(),
                 last_audio_sessions: Arc::new(RwLock::new(Vec::new())),
+                pot_mappings: Arc::new(RwLock::new(saved_mappings)),
+                app_handle: app_handle.clone(),
             };
 
             app.manage(app_state);
@@ -238,21 +314,17 @@ pub fn run() {
                             log::info!("Audio session polling task cancelled");
                             break;
                         }
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(AUDIO_SESSION_POLL_INTERVAL_SECS)) => {
+                        _ = tokio::time::sleep(tokio::time::Duration::from_millis(AUDIO_SESSION_POLL_INTERVAL_MS)) => {
                             // Get current audio sessions
                             match audio_manager.get_audio_sessions() {
                                 Ok(current_sessions) => {
-                                    // Use write lock for atomic comparison and update
+                                    // Always update and emit so volume level changes are reflected in real-time
                                     let mut last = last_sessions_state.write().await;
-                                    if *last != current_sessions {
-                                        // Update stored sessions atomically with the same lock
-                                        *last = current_sessions.clone();
-                                        drop(last); // Release lock before emitting
+                                    *last = current_sessions.clone();
+                                    drop(last);
 
-                                        // Emit update event with error handling
-                                        if let Err(e) = app_handle_clone2.emit("audio-sessions-updated", &current_sessions) {
-                                            log::error!("Failed to emit audio-sessions-updated event: {}", e);
-                                        }
+                                    if let Err(e) = app_handle_clone2.emit("audio-sessions-updated", &current_sessions) {
+                                        log::error!("Failed to emit audio-sessions-updated event: {}", e);
                                     }
                                 }
                                 Err(e) => {
@@ -276,6 +348,8 @@ pub fn run() {
             set_master_volume,
             get_master_volume,
             get_mixer_channels,
+            get_pot_mappings,
+            set_pot_mapping,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

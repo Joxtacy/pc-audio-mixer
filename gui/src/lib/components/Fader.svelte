@@ -3,6 +3,7 @@
 
 	export let channel: MixerChannel
 	export let value: number = 0
+	export let mappedApp: string | null = null
 
 	$: faderHeight = 100 - value
 </script>
@@ -21,6 +22,11 @@
 
 	<div class="fader-footer">
 		<div class="pot-indicator">Pot {channel.id}</div>
+		{#if mappedApp}
+			<div class="mapped-app" title={mappedApp}>
+				{mappedApp.length > 10 ? mappedApp.substring(0, 10) + '...' : mappedApp}
+			</div>
+		{/if}
 	</div>
 </div>
 
@@ -100,16 +106,28 @@
 	}
 
 	.fader-footer {
-		height: 30px;
+		min-height: 30px;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		margin-top: 8px;
+		gap: 2px;
 	}
 
 	.pot-indicator {
 		font-size: 10px;
 		color: rgba(255, 255, 255, 0.6);
 		text-align: center;
+	}
+
+	.mapped-app {
+		font-size: 9px;
+		color: rgba(100, 180, 255, 0.8);
+		text-align: center;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 60px;
 	}
 </style>

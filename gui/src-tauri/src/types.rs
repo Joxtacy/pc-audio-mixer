@@ -70,10 +70,18 @@ pub struct ConnectionStatus {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PotMapping {
+    pub pot_index: u8,
+    pub process_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub start_with_windows: bool,
     pub minimize_to_tray: bool,
     pub auto_connect: bool,
     pub theme: String,
+    #[serde(default)]
+    pub pot_mappings: Vec<PotMapping>,
 }

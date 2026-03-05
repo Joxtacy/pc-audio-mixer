@@ -51,6 +51,11 @@ export interface SerialPortInfo {
 	description: string
 }
 
+export interface PotMapping {
+	pot_index: number
+	process_name: string
+}
+
 // Stores
 export const potentiometerData = writable<PotentiometerData>({
 	pot1: 0,
@@ -72,6 +77,7 @@ export const connectionStatus = writable<ConnectionStatus>({
 export const mixerChannels = writable<MixerChannel[]>([])
 export const availablePorts = writable<SerialPortInfo[]>([])
 export const audioSessions = writable<AudioSession[]>([])
+export const potMappings = writable<PotMapping[]>([])
 
 // Derived stores
 export const channelValues = derived(
@@ -105,6 +111,13 @@ export async function initializeListeners() {
 	// Listen for connection status changes
 	await listen<ConnectionStatus>('connection-status', (event: Event<ConnectionStatus>) => {
 		connectionStatus.set(event.payload)
+	})
+
+	// Listen for pot mapping updates
+	await listen<PotMapping[]>('pot-mappings-updated', (event: Event<PotMapping[]>) => {
+		if (event.payload && Array.isArray(event.payload)) {
+			potMappings.set(event.payload)
+		}
 	})
 
 	// Listen for audio session updates
@@ -179,6 +192,26 @@ export async function loadMixerChannels(): Promise<MixerChannel[]> {
 	} catch (error) {
 		console.error('Failed to load mixer channels:', error)
 		return []
+	}
+}
+
+export async function getPotMappings(): Promise<PotMapping[]> {
+	try {
+		const mappings = await invoke<PotMapping[]>('get_pot_mappings')
+		potMappings.set(mappings)
+		return mappings
+	} catch (error) {
+		console.error('Failed to get pot mappings:', error)
+		return []
+	}
+}
+
+export async function setPotMapping(potIndex: number, processName: string | null): Promise<void> {
+	try {
+		const mappings = await invoke<PotMapping[]>('set_pot_mapping', { potIndex, processName })
+		potMappings.set(mappings)
+	} catch (error) {
+		console.error('Failed to set pot mapping:', error)
 	}
 }
 
@@ -282,6 +315,16 @@ export async function initializeMixer() {
 				volume: 50,
 				is_muted: false
 			}])
+		}
+
+		// Load saved pot mappings
+		try {
+			console.log('Loading pot mappings...')
+			await getPotMappings()
+			console.log('Pot mappings loaded')
+		} catch (error) {
+			console.error('Failed to load pot mappings:', error)
+			errors.push(`Pot mappings: ${error}`)
 		}
 
 		// Try auto-connect but don't wait for it
