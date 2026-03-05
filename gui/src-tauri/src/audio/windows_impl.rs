@@ -335,9 +335,7 @@ mod windows_audio {
 
         if hr < 0 {
             log::error!("Failed to get session count: 0x{:08x}", hr);
-        } else {
-            log::debug!("Audio session count: {}", count);
-            if count > 0 && count < 1000 {
+        } else if count > 0 && count < 1000 {
             // Sanity check to prevent excessive iteration
             // Enumerate sessions
             for i in 0..count {
@@ -345,7 +343,6 @@ mod windows_audio {
                 let hr = ((*session_enum_vtbl).GetSession)(session_enum, i, &mut session_control);
 
                 if hr < 0 {
-                    log::debug!("Session {}: GetSession failed 0x{:08x}", i, hr);
                     continue;
                 }
 
@@ -367,8 +364,6 @@ mod windows_audio {
                     &mut session_control2 as *mut _ as *mut *mut c_void,
                 );
 
-                log::debug!("Session {}: QueryInterface hr=0x{:08x} null={}", i, hr, session_control2.is_null());
-
                 if hr >= 0 && !session_control2.is_null() {
                     let session_ctrl2_vtbl =
                         *(session_control2 as *mut *mut IAudioSessionControl2Vtbl);
@@ -377,8 +372,6 @@ mod windows_audio {
                     let mut process_id: u32 = 0;
                     let hr =
                         ((*session_ctrl2_vtbl).GetProcessId)(session_control2, &mut process_id);
-
-                    log::debug!("Session {}: process_id={}, hr=0x{:08x}", i, process_id, hr);
 
                     if hr >= 0 && process_id != 0 {
                         // Get process name
@@ -452,7 +445,6 @@ mod windows_audio {
                 }
 
                 ((*session_ctrl_vtbl).parent.Release)(session_control as *mut IUnknown);
-            }
             }
         }
 
