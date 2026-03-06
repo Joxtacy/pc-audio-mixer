@@ -57,7 +57,7 @@
       "entitlements": null,
       "providerShortName": null,
       "signingIdentity": null,
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "14.2"
     }
   }
 }

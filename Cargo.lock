@@ -1698,8 +1698,12 @@ name = "gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "core-foundation",
+ "core-foundation-sys",
  "env_logger",
+ "libc",
  "log",
+ "objc2",
  "scopeguard",
  "serde",
  "serde_json",

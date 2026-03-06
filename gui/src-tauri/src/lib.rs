@@ -3,7 +3,7 @@ mod config;
 mod serial;
 mod types;
 
-use audio::{AudioManager, WindowsAudioManager};
+use audio::{AudioManager, PlatformAudioManager};
 use serial::SerialManager;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -235,7 +235,7 @@ pub fn run() {
 
             let app_state = AppState {
                 serial_manager: Arc::new(SerialManager::new()),
-                audio_manager: Arc::new(WindowsAudioManager::new()),
+                audio_manager: Arc::new(PlatformAudioManager::new()),
                 cancellation_token: CancellationToken::new(),
                 last_audio_sessions: Arc::new(RwLock::new(Vec::new())),
                 pot_mappings: Arc::new(RwLock::new(saved_mappings)),
