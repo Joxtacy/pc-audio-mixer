@@ -789,40 +789,6 @@ unsafe fn log_tap_description_methods() {
     log::info!("CATapDescription init methods: {:?}", init_methods);
 }
 
-/// Get the first output stream AudioObjectID for a device.
-fn get_first_output_stream(device_id: AudioObjectID) -> Result<AudioObjectID> {
-    let address = AudioObjectPropertyAddress {
-        m_selector: u32::from_be_bytes([b's', b't', b'm', b'#']), // 'stm#'
-        m_scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT,
-        m_element: K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
-    };
-
-    let mut data_size: u32 = 0;
-    let status = unsafe {
-        AudioObjectGetPropertyDataSize(device_id, &address, 0, std::ptr::null(), &mut data_size)
-    };
-    check_os_status(status, "get output stream count")?;
-
-    let count = data_size as usize / std::mem::size_of::<AudioObjectID>();
-    if count == 0 {
-        return Err(anyhow!("No output streams on device {}", device_id));
-    }
-
-    let mut stream_ids = vec![0u32; count];
-    let status = unsafe {
-        AudioObjectGetPropertyData(
-            device_id,
-            &address,
-            0,
-            std::ptr::null(),
-            &mut data_size,
-            stream_ids.as_mut_ptr() as *mut c_void,
-        )
-    };
-    check_os_status(status, "get output streams")?;
-
-    Ok(stream_ids[0])
-}
 
 unsafe fn create_tap_description(pid: u32) -> Result<Retained<AnyObject>> {
     // Log available methods once for debugging

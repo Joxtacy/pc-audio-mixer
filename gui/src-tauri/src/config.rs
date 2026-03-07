@@ -44,35 +44,6 @@ pub fn save_config(app_handle: &AppHandle, config: &AppConfig) -> Result<()> {
     Ok(())
 }
 
-pub fn update_settings(
-    app_handle: &AppHandle,
-    start_with_windows: Option<bool>,
-    minimize_to_tray: Option<bool>,
-    auto_connect: Option<bool>,
-    theme: Option<String>,
-) -> Result<()> {
-    let mut config = load_config(app_handle)?;
-
-    if let Some(value) = start_with_windows {
-        config.start_with_windows = value;
-    }
-
-    if let Some(value) = minimize_to_tray {
-        config.minimize_to_tray = value;
-    }
-
-    if let Some(value) = auto_connect {
-        config.auto_connect = value;
-    }
-
-    if let Some(value) = theme {
-        config.theme = value;
-    }
-
-    save_config(app_handle, &config)?;
-
-    Ok(())
-}
 
 pub fn load_pot_mappings(app_handle: &AppHandle) -> Result<Vec<PotMapping>> {
     let config = load_config(app_handle)?;

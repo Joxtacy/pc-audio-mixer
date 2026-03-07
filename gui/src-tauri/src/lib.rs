@@ -95,11 +95,11 @@ async fn connect_serial(
                     }
                 }
 
-                if !volume_batch.is_empty() {
-                    if audio_manager.set_volumes_batch(&volume_batch).is_ok() {
-                        for (pid, vol) in &volume_batch {
-                            last_applied.insert(*pid, *vol);
-                        }
+                if !volume_batch.is_empty()
+                    && audio_manager.set_volumes_batch(&volume_batch).is_ok()
+                {
+                    for (pid, vol) in &volume_batch {
+                        last_applied.insert(*pid, *vol);
                     }
                 }
             }
@@ -268,7 +268,7 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 use tauri::menu::{Menu, MenuItem};
-                use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+                use tauri::tray::TrayIconBuilder;
 
                 let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
                 let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;

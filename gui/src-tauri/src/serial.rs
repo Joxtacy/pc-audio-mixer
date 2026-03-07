@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use serde_json;
 use serialport::{self, SerialPort};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
