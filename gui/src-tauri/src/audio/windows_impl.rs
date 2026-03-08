@@ -333,6 +333,12 @@ mod windows_audio {
         let mut count: i32 = 0;
         let hr = ((*session_enum_vtbl).GetCount)(session_enum, &mut count);
 
+        // Track which process names we've already seen to deduplicate.
+        // Apps like Discord can create multiple audio sessions (voice, notifications, etc.)
+        // but the user should see only one entry per application.
+        let mut seen_process_names: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
         if hr < 0 {
             log::error!("Failed to get session count: 0x{:08x}", hr);
         } else if count > 0 && count < 1000 {
@@ -377,6 +383,19 @@ mod windows_audio {
                         // Get process name
                         let process_name = get_process_name_from_id(process_id)
                             .unwrap_or_else(|| format!("Unknown App (PID: {})", process_id));
+
+                        // Skip duplicate sessions for the same application.
+                        let name_lower = process_name.to_lowercase();
+                        if seen_process_names.contains(&name_lower) {
+                            ((*session_ctrl2_vtbl).parent.parent.Release)(
+                                session_control2 as *mut IUnknown,
+                            );
+                            ((*session_ctrl_vtbl).parent.Release)(
+                                session_control as *mut IUnknown,
+                            );
+                            continue;
+                        }
+                        seen_process_names.insert(name_lower);
 
                         // Get display name (often empty)
                         let mut display_name_ptr: PWSTR = ptr::null_mut();
@@ -542,7 +561,9 @@ mod windows_audio {
                 let hr = ((*session_ctrl2_vtbl).GetProcessId)(session_control2, &mut pid);
 
                 if hr >= 0 && pid == process_id {
-                    // Found our session - set volume through ISimpleAudioVolume
+                    // Found a matching session - set volume through ISimpleAudioVolume.
+                    // Don't break — continue to set volume on ALL sessions for this PID
+                    // (apps like Discord can have multiple audio sessions).
                     let mut simple_volume: *mut ISimpleAudioVolume = ptr::null_mut();
                     let iid_simple_volume = GUID {
                         data1: 0x87CE5498,
@@ -579,10 +600,6 @@ mod windows_audio {
             }
 
             ((*session_ctrl_vtbl).parent.Release)(session_control as *mut IUnknown);
-
-            if found {
-                break;
-            }
         }
 
         // Cleanup
@@ -701,6 +718,14 @@ mod windows_audio {
             data4: [0x92, 0x15, 0x6D, 0xA4, 0x7E, 0xF8, 0x83, 0xD8],
         };
 
+        // Build a set of PIDs we need to match, along with the volume to apply.
+        // Also collect process names so we can match ALL sessions belonging to
+        // the same application (an app like Discord may spawn multiple audio
+        // sessions that share a process name but have different PIDs or session
+        // instances).
+        let pid_set: std::collections::HashMap<u32, f32> =
+            app_volumes.iter().copied().collect();
+
         for i in 0..count {
             let mut session_control: *mut IAudioSessionControl = ptr::null_mut();
             let hr = ((*session_enum_vtbl).GetSession)(session_enum, i, &mut session_control);
@@ -722,7 +747,25 @@ mod windows_audio {
                 let hr = ((*session_ctrl2_vtbl).GetProcessId)(session_control2, &mut pid);
 
                 if hr >= 0 {
-                    if let Some(&(_, vol)) = app_volumes.iter().find(|(p, _)| *p == pid) {
+                    // Match by exact PID first
+                    let vol = pid_set.get(&pid).copied().or_else(|| {
+                        // Also match by process name so that all sessions
+                        // belonging to the same app get their volume set,
+                        // even if the enumerated PID differs from the one
+                        // we stored (e.g. multiple sessions for Discord).
+                        let session_name = get_process_name_from_id(pid);
+                        session_name.and_then(|name| {
+                            pid_set.iter().find_map(|(&target_pid, &v)| {
+                                let target_name = get_process_name_from_id(target_pid);
+                                match target_name {
+                                    Some(tn) if tn.eq_ignore_ascii_case(&name) => Some(v),
+                                    _ => None,
+                                }
+                            })
+                        })
+                    });
+
+                    if let Some(vol) = vol {
                         // Set volume via ISimpleAudioVolume
                         let mut simple_volume: *mut ISimpleAudioVolume = ptr::null_mut();
                         let hr = ((*session_ctrl_vtbl).parent.QueryInterface)(
