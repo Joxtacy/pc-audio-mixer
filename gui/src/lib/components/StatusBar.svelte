@@ -32,14 +32,14 @@
 		await disconnectSerial()
 	}
 
-	async function _togglePortSelector() {
+	async function togglePortSelector() {
 		if (!showPortSelector) {
 			await listSerialPorts()
 		}
 		showPortSelector = !showPortSelector
 	}
 
-	async function _handleReconnect() {
+	async function handleReconnect() {
 		await handleDisconnect()
 		setTimeout(() => {
 			handleConnect()
