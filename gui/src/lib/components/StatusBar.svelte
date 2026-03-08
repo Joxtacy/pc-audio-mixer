@@ -9,14 +9,11 @@
 		type SerialPortInfo,
 	} from '$lib/stores/mixer'
 
-	let status: ConnectionStatus = { connected: false, port: null, error: null }
-	let ports: SerialPortInfo[] = []
-	let selectedPort: string = ''
-	let showPortSelector = false
-	let isConnecting = false
-
-	$: status = $connectionStatus
-	$: ports = $availablePorts
+	let status: ConnectionStatus = $derived($connectionStatus)
+	let ports: SerialPortInfo[] = $derived($availablePorts)
+	let selectedPort = $state('')
+	let showPortSelector = $state(false)
+	let isConnecting = $state(false)
 
 	async function handleConnect() {
 		isConnecting = true
@@ -63,20 +60,20 @@
 
 	<div class="status-controls">
 		{#if status.connected}
-			<button type="button" class="btn btn-disconnect" on:click={handleDisconnect}>
+			<button type="button" class="btn btn-disconnect" onclick={handleDisconnect}>
 				Disconnect
 			</button>
-			<button type="button" class="btn btn-reconnect" on:click={handleReconnect}>Reconnect</button>
+			<button type="button" class="btn btn-reconnect" onclick={handleReconnect}>Reconnect</button>
 		{:else}
 			<button
 				type="button"
 				class="btn btn-connect"
-				on:click={handleConnect}
+				onclick={handleConnect}
 				disabled={isConnecting}
 			>
 				{isConnecting ? "Connecting..." : "Auto Connect"}
 			</button>
-			<button type="button" class="btn btn-select" on:click={togglePortSelector}>
+			<button type="button" class="btn btn-select" onclick={togglePortSelector}>
 				Select Port
 			</button>
 		{/if}
@@ -95,14 +92,14 @@
 				<button
 					type="button"
 					class="btn btn-primary"
-					on:click={handleConnect}
+					onclick={handleConnect}
 					disabled={isConnecting}
 				>
 					Connect to Selected
 				</button>
 			{:else}
 				<p class="no-ports">No serial ports detected</p>
-				<button type="button" class="btn" on:click={listSerialPorts}>Refresh</button>
+				<button type="button" class="btn" onclick={listSerialPorts}>Refresh</button>
 			{/if}
 		</div>
 	{/if}

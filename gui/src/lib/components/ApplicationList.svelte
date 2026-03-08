@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { audioSessions, potMappings, draggedApp } from '$lib/stores/mixer'
 
-	let draggingProcess: string | null = null
+	let draggingProcess = $state<string | null>(null)
 
 	function handleDragStart(event: DragEvent, processName: string) {
 		if (event.dataTransfer) {
@@ -67,8 +67,8 @@
 				class:master={session.process_id === 0}
 				class:dragging={draggingProcess === session.process_name}
 				draggable="true"
-				on:dragstart={(e) => handleDragStart(e, session.process_name)}
-				on:dragend={handleDragEnd}
+				ondragstart={(e: DragEvent) => handleDragStart(e, session.process_name)}
+				ondragend={handleDragEnd}
 			>
 					<div class="app-info">
 						<span class="app-name">

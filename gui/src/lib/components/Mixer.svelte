@@ -2,11 +2,13 @@
 	import { channelValues, potMappings } from '$lib/stores/mixer'
 	import Fader from './Fader.svelte'
 
-	$: channels = $channelValues
+	let channels = $derived($channelValues)
 
-	$: mappedApps = Object.fromEntries(
-		$potMappings.map((m) => [m.pot_index, m.process_name])
-	) as Record<number, string>
+	let mappedApps = $derived(
+		Object.fromEntries(
+			$potMappings.map((m) => [m.pot_index, m.process_name])
+		) as Record<number, string>
+	)
 </script>
 
 <div class="mixer-container">

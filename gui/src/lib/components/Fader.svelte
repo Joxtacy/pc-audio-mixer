@@ -1,17 +1,18 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte'
 	import { setPotMapping, draggedApp, type MixerChannel } from '$lib/stores/mixer'
 
-	export let channel: MixerChannel
-	export let value: number = 0
-	export let mappedApp: string | null = null
+	let { channel, value = 0, mappedApp = null }: {
+		channel: MixerChannel
+		value?: number
+		mappedApp?: string | null
+	} = $props()
 
-	$: faderHeight = 100 - value
+	let faderHeight = $derived(100 - value)
 
-	let dragEnterCount = 0
-	$: isDragOver = dragEnterCount > 0
+	let dragEnterCount = $state(0)
+	let isDragOver = $derived(dragEnterCount > 0)
 
-	let dropSuccess = false
+	let dropSuccess = $state(false)
 	let dropTimer: ReturnType<typeof setTimeout> | null = null
 
 	function handleDragEnter(event: DragEvent) {
@@ -64,8 +65,10 @@
 		}
 	}
 
-	onDestroy(() => {
-		if (dropTimer) clearTimeout(dropTimer)
+	$effect(() => {
+		return () => {
+			if (dropTimer) clearTimeout(dropTimer)
+		}
 	})
 </script>
 
@@ -75,10 +78,10 @@
 	class:drop-success={dropSuccess}
 	role="region"
 	aria-label="Channel {channel.id} fader"
-	on:dragenter={handleDragEnter}
-	on:dragleave={handleDragLeave}
-	on:dragover={handleDragOver}
-	on:drop={handleDrop}
+	ondragenter={handleDragEnter}
+	ondragleave={handleDragLeave}
+	ondragover={handleDragOver}
+	ondrop={handleDrop}
 >
 	<div class="fader-header"><span class="channel-number">CH {channel.id}</span></div>
 
@@ -98,7 +101,7 @@
 				<div class="mapped-app" title={mappedApp}>
 					{mappedApp.length > 10 ? mappedApp.substring(0, 10) + '...' : mappedApp}
 				</div>
-				<button class="clear-btn" on:click={handleClear} title="Remove mapping" aria-label="Remove mapping">&times;</button>
+				<button class="clear-btn" onclick={handleClear} title="Remove mapping" aria-label="Remove mapping">&times;</button>
 			</div>
 		{/if}
 	</div>

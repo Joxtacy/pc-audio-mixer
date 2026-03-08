@@ -5,8 +5,8 @@
 	import StatusBar from '$lib/components/StatusBar.svelte'
 	import { initializeMixer } from '$lib/stores/mixer'
 
-	let isInitialized = false
-	let initError: string | null = null
+	let isInitialized = $state(false)
+	let initError = $state<string | null>(null)
 
 	onMount(async () => {
 		// Add a timeout to prevent infinite hanging
