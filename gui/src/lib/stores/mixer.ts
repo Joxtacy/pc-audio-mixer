@@ -330,10 +330,7 @@ export async function initializeMixer() {
 			errors.push(`Pot mappings: ${error}`)
 		}
 
-		// Try auto-connect but don't wait for it
-		connectSerial().catch(err => {
-			console.log('Auto-connect failed (this is normal if no device is connected):', err)
-		})
+		// Auto-connect is handled by backend auto-reconnect loop
 
 		if (errors.length > 0) {
 			console.warn('Mixer initialization completed with errors:', errors)

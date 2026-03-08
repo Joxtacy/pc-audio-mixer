@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { channelValues, potMappings } from '$lib/stores/mixer'
+	import { channelValues, connectionStatus, potMappings } from '$lib/stores/mixer'
 	import Fader from './Fader.svelte'
 
 	let channels = $derived($channelValues)
+	let status = $derived($connectionStatus)
 
 	let mappedApps = $derived(
 		Object.fromEntries(
@@ -12,7 +13,14 @@
 </script>
 
 <div class="mixer-container">
-	<h2 class="mixer-title">Audio Mixer</h2>
+	<div class="mixer-header">
+		<h2 class="mixer-title">Audio Mixer</h2>
+		<span
+			class="connection-dot"
+			class:connected={status.connected}
+			title={status.connected ? `Connected to ${status.port}` : 'Disconnected'}
+		></span>
+	</div>
 
 	<div class="faders-container">
 		{#each channels as channel (channel.id)}
@@ -32,14 +40,43 @@
 		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 	}
 
+	.mixer-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 20px;
+	}
+
 	.mixer-title {
 		text-align: center;
 		color: rgba(255, 255, 255, 0.95);
-		margin-bottom: 20px;
+		margin: 0;
 		font-size: 20px;
 		font-weight: 400;
 		letter-spacing: 1px;
 		text-transform: uppercase;
+		flex: 1;
+	}
+
+	.connection-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: #ff4444;
+		box-shadow: 0 0 6px rgba(255, 68, 68, 0.5);
+		animation: pulse-dot 2s infinite;
+		flex-shrink: 0;
+	}
+
+	.connection-dot.connected {
+		background: #44ff44;
+		box-shadow: 0 0 8px rgba(68, 255, 68, 0.6);
+		animation: none;
+	}
+
+	@keyframes pulse-dot {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.4; }
 	}
 
 	.faders-container {

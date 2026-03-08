@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte'
 	import ApplicationList from '$lib/components/ApplicationList.svelte'
 	import Mixer from '$lib/components/Mixer.svelte'
-	import StatusBar from '$lib/components/StatusBar.svelte'
 	import { initializeMixer } from '$lib/stores/mixer'
 
 	let isInitialized = $state(false)
@@ -47,7 +46,6 @@
 					<p class="hint">Check the browser console for more details</p>
 				</div>
 			{:else}
-				<StatusBar />
 				<div class="main-layout">
 					<div class="mixer-section"><Mixer /></div>
 					<div class="sidebar"><ApplicationList /></div>

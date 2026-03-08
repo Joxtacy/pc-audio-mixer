@@ -133,27 +133,46 @@ impl SerialManager {
 
     pub async fn start_reading(&self, tx: mpsc::Sender<PotentiometerData>) -> Result<()> {
         let port = self.port.clone();
+        let port_name = self.port_name.clone();
 
         tokio::spawn(async move {
             let mut buffer = vec![0u8; 256];
             let mut line_buffer = String::new();
+            let mut consecutive_errors: u32 = 0;
+            const MAX_CONSECUTIVE_ERRORS: u32 = 10;
 
             loop {
                 let data_available = {
                     let mut port_guard = port.lock().unwrap();
-                    if let Some(ref mut port) = *port_guard {
-                        match port.read(&mut buffer) {
+                    if let Some(ref mut serial_port) = *port_guard {
+                        match serial_port.read(&mut buffer) {
                             Ok(n) if n > 0 => {
+                                consecutive_errors = 0;
                                 line_buffer.push_str(&String::from_utf8_lossy(&buffer[..n]));
                                 true
                             }
-                            _ => false,
+                            Ok(_) => {
+                                consecutive_errors += 1;
+                                false
+                            }
+                            Err(_) => {
+                                consecutive_errors += 1;
+                                false
+                            }
                         }
                     } else {
                         // Port disconnected
                         break;
                     }
                 };
+
+                // Detect device unplug via persistent read errors
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                    log::warn!("Serial port: {} consecutive read errors, assuming device disconnected", consecutive_errors);
+                    *port.lock().unwrap() = None;
+                    *port_name.lock().unwrap() = None;
+                    break;
+                }
 
                 if data_available {
                     // Process complete lines
