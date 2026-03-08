@@ -79,6 +79,9 @@ export const availablePorts = writable<SerialPortInfo[]>([])
 export const audioSessions = writable<AudioSession[]>([])
 export const potMappings = writable<PotMapping[]>([])
 
+// Drag-and-drop state shared between ApplicationList and Fader
+export const draggedApp = writable<string | null>(null)
+
 // Derived stores
 export const channelValues = derived(
 	[potentiometerData, mixerChannels],

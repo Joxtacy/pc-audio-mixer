@@ -2,14 +2,11 @@
 	import { channelValues, potMappings } from '$lib/stores/mixer'
 	import Fader from './Fader.svelte'
 
-	let channels = $channelValues
-
 	$: channels = $channelValues
 
-	function getMappedApp(channelId: number): string | null {
-		const mapping = $potMappings.find((m) => m.pot_index === channelId)
-		return mapping ? mapping.process_name : null
-	}
+	$: mappedApps = Object.fromEntries(
+		$potMappings.map((m) => [m.pot_index, m.process_name])
+	) as Record<number, string>
 </script>
 
 <div class="mixer-container">
@@ -17,7 +14,7 @@
 
 	<div class="faders-container">
 		{#each channels as channel (channel.id)}
-			<Fader {channel} value={channel.value} mappedApp={getMappedApp(channel.id)} />
+			<Fader {channel} value={channel.value} mappedApp={mappedApps[channel.id] ?? null} />
 		{/each}
 	</div>
 </div>

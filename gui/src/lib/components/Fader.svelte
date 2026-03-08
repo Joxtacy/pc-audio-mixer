@@ -1,14 +1,85 @@
 <script lang="ts">
-	import type { MixerChannel } from '$lib/stores/mixer'
+	import { onDestroy } from 'svelte'
+	import { setPotMapping, draggedApp, type MixerChannel } from '$lib/stores/mixer'
 
 	export let channel: MixerChannel
 	export let value: number = 0
 	export let mappedApp: string | null = null
 
 	$: faderHeight = 100 - value
+
+	let dragEnterCount = 0
+	$: isDragOver = dragEnterCount > 0
+
+	let dropSuccess = false
+	let dropTimer: ReturnType<typeof setTimeout> | null = null
+
+	function handleDragEnter(event: DragEvent) {
+		dragEnterCount++
+		event.preventDefault()
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'move'
+		}
+	}
+
+	function handleDragLeave() {
+		dragEnterCount = Math.max(0, dragEnterCount - 1)
+	}
+
+	function handleDragOver(event: DragEvent) {
+		event.preventDefault()
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'move'
+		}
+	}
+
+	async function handleDrop(event: DragEvent) {
+		event.preventDefault()
+		dragEnterCount = 0
+
+		// Use shared store as primary source (reliable across all webviews),
+		// fall back to dataTransfer for external drag compatibility
+		const processName = $draggedApp || event.dataTransfer?.getData('text/plain')
+		if (!processName) return
+
+		try {
+			await setPotMapping(channel.id, processName)
+
+			if (dropTimer) clearTimeout(dropTimer)
+			dropSuccess = true
+			dropTimer = setTimeout(() => {
+				dropSuccess = false
+				dropTimer = null
+			}, 400)
+		} catch (err) {
+			console.error('Failed to set pot mapping on drop:', err)
+		}
+	}
+
+	async function handleClear() {
+		try {
+			await setPotMapping(channel.id, null)
+		} catch (err) {
+			console.error('Failed to clear pot mapping:', err)
+		}
+	}
+
+	onDestroy(() => {
+		if (dropTimer) clearTimeout(dropTimer)
+	})
 </script>
 
-<div class="fader-container" role="region" aria-label="Channel {channel.id} fader">
+<div
+	class="fader-container"
+	class:drag-over={isDragOver}
+	class:drop-success={dropSuccess}
+	role="region"
+	aria-label="Channel {channel.id} fader"
+	on:dragenter={handleDragEnter}
+	on:dragleave={handleDragLeave}
+	on:dragover={handleDragOver}
+	on:drop={handleDrop}
+>
 	<div class="fader-header"><span class="channel-number">CH {channel.id}</span></div>
 
 	<div class="fader-body">
@@ -23,8 +94,11 @@
 	<div class="fader-footer">
 		<div class="pot-indicator">Pot {channel.id}</div>
 		{#if mappedApp}
-			<div class="mapped-app" title={mappedApp}>
-				{mappedApp.length > 10 ? mappedApp.substring(0, 10) + '...' : mappedApp}
+			<div class="mapped-app-row">
+				<div class="mapped-app" title={mappedApp}>
+					{mappedApp.length > 10 ? mappedApp.substring(0, 10) + '...' : mappedApp}
+				</div>
+				<button class="clear-btn" on:click={handleClear} title="Remove mapping" aria-label="Remove mapping">&times;</button>
 			</div>
 		{/if}
 	</div>
@@ -121,6 +195,34 @@
 		text-align: center;
 	}
 
+	.fader-container.drag-over {
+		border: 1px solid rgba(100, 180, 255, 0.6);
+		box-shadow: 0 0 12px rgba(100, 180, 255, 0.3);
+		border-radius: 8px;
+	}
+
+	.fader-container.drop-success {
+		animation: drop-pulse 0.4s ease;
+	}
+
+	@keyframes drop-pulse {
+		0% {
+			border-color: rgba(80, 220, 120, 0.8);
+			box-shadow: 0 0 16px rgba(80, 220, 120, 0.4);
+		}
+		100% {
+			border-color: transparent;
+			box-shadow: none;
+		}
+	}
+
+	.mapped-app-row {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		justify-content: center;
+	}
+
 	.mapped-app {
 		font-size: 9px;
 		color: rgba(100, 180, 255, 0.8);
@@ -128,6 +230,27 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		max-width: 60px;
+		max-width: 48px;
+	}
+
+	.clear-btn {
+		background: rgba(255, 80, 80, 0.3);
+		color: rgba(255, 255, 255, 0.8);
+		border: none;
+		border-radius: 50%;
+		width: 14px;
+		height: 14px;
+		font-size: 9px;
+		line-height: 1;
+		padding: 0;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.clear-btn:hover {
+		background: rgba(255, 80, 80, 0.6);
 	}
 </style>

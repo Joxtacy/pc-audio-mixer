@@ -1,5 +1,21 @@
 <script lang="ts">
-	import { audioSessions, potMappings, setPotMapping } from '$lib/stores/mixer'
+	import { audioSessions, potMappings, draggedApp } from '$lib/stores/mixer'
+
+	let draggingProcess: string | null = null
+
+	function handleDragStart(event: DragEvent, processName: string) {
+		if (event.dataTransfer) {
+			event.dataTransfer.setData('text/plain', processName)
+			event.dataTransfer.effectAllowed = 'copyMove'
+		}
+		draggingProcess = processName
+		draggedApp.set(processName)
+	}
+
+	function handleDragEnd() {
+		draggingProcess = null
+		draggedApp.set(null)
+	}
 
 	function getVolumeIcon(volume: number): string {
 		if (volume === 0) {
@@ -29,28 +45,11 @@
 			.substring(0, 100) // Limit length
 	}
 
-	function getMappedPot(processName: string): number | null {
+	function getAssignedPot(processName: string): number | null {
 		const mapping = $potMappings.find(
 			(m) => m.process_name.toLowerCase() === processName.toLowerCase()
 		)
 		return mapping ? mapping.pot_index : null
-	}
-
-	async function handlePotChange(event: Event, processName: string) {
-		const select = event.target as HTMLSelectElement
-		const value = select.value
-
-		if (value === 'none') {
-			// Find current mapping for this app and remove it
-			const currentPot = getMappedPot(processName)
-			if (currentPot !== null) {
-				await setPotMapping(currentPot, null)
-			}
-		} else {
-			const potIndex = parseInt(value, 10)
-			if (isNaN(potIndex) || potIndex < 1 || potIndex > 8) return
-			await setPotMapping(potIndex, processName)
-		}
 	}
 </script>
 
@@ -62,7 +61,15 @@
 	{:else}
 		<ul class="app-list">
 			{#each $audioSessions as session (session.process_id)}
-				<li class="app-item" class:master={session.process_id === 0}>
+				{@const assignedPot = getAssignedPot(session.process_name)}
+				<li
+				class="app-item"
+				class:master={session.process_id === 0}
+				class:dragging={draggingProcess === session.process_name}
+				draggable="true"
+				on:dragstart={(e) => handleDragStart(e, session.process_name)}
+				on:dragend={handleDragEnd}
+			>
 					<div class="app-info">
 						<span class="app-name">
 							{#if session.process_id === 0}
@@ -74,16 +81,9 @@
 					</div>
 
 					<div class="controls">
-						<select
-							class="pot-select"
-							value={getMappedPot(session.process_name)?.toString() ?? 'none'}
-							on:change={(e) => handlePotChange(e, session.process_name)}
-						>
-							<option value="none">None</option>
-							{#each Array.from({ length: 8 }, (_, i) => i + 1) as pot}
-								<option value={pot.toString()}>Pot {pot}</option>
-							{/each}
-						</select>
+						{#if assignedPot !== null}
+							<span class="pot-badge">Pot {assignedPot}</span>
+						{/if}
 
 						<div class="volume-info">
 							<span class="volume-icon"> {getVolumeIcon(session.volume)} </span>
@@ -188,23 +188,17 @@
 		gap: 12px;
 	}
 
-	.pot-select {
-		background: rgba(60, 60, 60, 0.8);
-		color: #ccc;
-		border: 1px solid rgba(255, 255, 255, 0.15);
-		border-radius: 4px;
-		padding: 4px 8px;
-		font-size: 11px;
-		cursor: pointer;
-		outline: none;
+	.app-item.dragging {
+		opacity: 0.5;
 	}
 
-	.pot-select:hover {
-		border-color: rgba(255, 255, 255, 0.3);
-	}
-
-	.pot-select:focus {
-		border-color: rgba(100, 100, 255, 0.5);
+	.pot-badge {
+		background: rgba(100, 180, 255, 0.2);
+		color: rgba(100, 180, 255, 0.9);
+		border-radius: 8px;
+		padding: 2px 6px;
+		font-size: 10px;
+		white-space: nowrap;
 	}
 
 	.volume-info {
