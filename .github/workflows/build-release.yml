@@ -217,6 +217,9 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -LsSf https://github.com/probe-rs/probe-rs/releases/latest/download/probe-rs-tools-installer.sh | sh
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+
       - name: Install flip-link and elf2uf2-rs
         run: cargo install flip-link elf2uf2-rs
 

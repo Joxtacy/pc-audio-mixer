@@ -168,7 +168,10 @@ impl SerialManager {
 
                 // Detect device unplug via persistent read errors
                 if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                    log::warn!("Serial port: {} consecutive read errors, assuming device disconnected", consecutive_errors);
+                    log::warn!(
+                        "Serial port: {} consecutive read errors, assuming device disconnected",
+                        consecutive_errors
+                    );
                     *port.lock().unwrap() = None;
                     *port_name.lock().unwrap() = None;
                     break;
