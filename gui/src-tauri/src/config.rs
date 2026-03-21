@@ -44,7 +44,6 @@ pub fn save_config(app_handle: &AppHandle, config: &AppConfig) -> Result<()> {
     Ok(())
 }
 
-
 pub fn load_pot_mappings(app_handle: &AppHandle) -> Result<Vec<PotMapping>> {
     let config = load_config(app_handle)?;
     Ok(config.pot_mappings)

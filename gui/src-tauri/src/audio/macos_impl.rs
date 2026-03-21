@@ -12,9 +12,9 @@ use core_foundation_sys::dictionary::{
     CFDictionaryCreateMutable, CFDictionaryRef, CFDictionarySetValue,
 };
 use core_foundation_sys::string::CFStringRef;
+use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool};
-use objc2::msg_send;
 
 use crate::audio::AudioManager;
 use crate::types::AudioSession;
@@ -86,15 +86,12 @@ const K_AUDIO_HARDWARE_SERVICE_DEVICE_PROPERTY_VIRTUAL_MAIN_VOLUME: u32 =
 const K_AUDIO_HARDWARE_PROPERTY_PROCESS_OBJECT_LIST: u32 =
     u32::from_be_bytes([b'p', b'r', b's', b'#']); // 'prs#'
 const K_AUDIO_PROCESS_PROPERTY_PID: u32 = u32::from_be_bytes([b'p', b'p', b'i', b'd']); // 'ppid'
-const K_AUDIO_PROCESS_PROPERTY_BUNDLE_ID: u32 =
-    u32::from_be_bytes([b'p', b'b', b'i', b'd']); // 'pbid'
+const K_AUDIO_PROCESS_PROPERTY_BUNDLE_ID: u32 = u32::from_be_bytes([b'p', b'b', b'i', b'd']); // 'pbid'
 const K_AUDIO_PROCESS_PROPERTY_IS_RUNNING_OUTPUT: u32 =
     u32::from_be_bytes([b'p', b'i', b'r', b'o']); // 'piro'
 
-const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 =
-    u32::from_be_bytes([b'g', b'l', b'o', b'b']); // 'glob'
-const K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT: u32 =
-    u32::from_be_bytes([b'o', b'u', b't', b'p']); // 'outp'
+const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 = u32::from_be_bytes([b'g', b'l', b'o', b'b']); // 'glob'
+const K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT: u32 = u32::from_be_bytes([b'o', b'u', b't', b'p']); // 'outp'
 const K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN: u32 = 0;
 
 const K_AUDIO_OBJECT_SYSTEM_OBJECT: AudioObjectID = 1;
@@ -167,15 +164,9 @@ extern "C" {
         io_proc_id: AudioDeviceIOProcID,
     ) -> OSStatus;
 
-    fn AudioDeviceStart(
-        device_id: AudioObjectID,
-        io_proc_id: AudioDeviceIOProcID,
-    ) -> OSStatus;
+    fn AudioDeviceStart(device_id: AudioObjectID, io_proc_id: AudioDeviceIOProcID) -> OSStatus;
 
-    fn AudioDeviceStop(
-        device_id: AudioObjectID,
-        io_proc_id: AudioDeviceIOProcID,
-    ) -> OSStatus;
+    fn AudioDeviceStop(device_id: AudioObjectID, io_proc_id: AudioDeviceIOProcID) -> OSStatus;
 }
 
 // =============================================================================
@@ -562,25 +553,40 @@ impl TapManager {
         // 2. Create the process tap
         let mut tap_id: AudioObjectID = 0;
         let tap_desc_ptr = Retained::as_ptr(&tap_description) as *mut c_void;
-        log::info!("Calling AudioHardwareCreateProcessTap with desc ptr {:?}", tap_desc_ptr);
-        let status = unsafe {
-            AudioHardwareCreateProcessTap(tap_desc_ptr, &mut tap_id)
-        };
+        log::info!(
+            "Calling AudioHardwareCreateProcessTap with desc ptr {:?}",
+            tap_desc_ptr
+        );
+        let status = unsafe { AudioHardwareCreateProcessTap(tap_desc_ptr, &mut tap_id) };
         if status != 0 {
             // Decode OSStatus as FourCC for readable error
             let bytes = status.to_be_bytes();
-            let fourcc: String = bytes.iter().map(|&b| {
-                if b.is_ascii_graphic() || b == b' ' { b as char } else { '?' }
-            }).collect();
+            let fourcc: String = bytes
+                .iter()
+                .map(|&b| {
+                    if b.is_ascii_graphic() || b == b' ' {
+                        b as char
+                    } else {
+                        '?'
+                    }
+                })
+                .collect();
             log::error!(
                 "AudioHardwareCreateProcessTap failed: OSStatus {} ('{}')",
-                status, fourcc
+                status,
+                fourcc
             );
-            return Err(anyhow!("AudioHardwareCreateProcessTap: OSStatus {} ('{}')", status, fourcc));
+            return Err(anyhow!(
+                "AudioHardwareCreateProcessTap: OSStatus {} ('{}')",
+                status,
+                fourcc
+            ));
         }
 
         if tap_id == 0 {
-            return Err(anyhow!("AudioHardwareCreateProcessTap returned tap_id=0 (invalid)"));
+            return Err(anyhow!(
+                "AudioHardwareCreateProcessTap returned tap_id=0 (invalid)"
+            ));
         }
 
         // 3. Get tap UUID for aggregate device config
@@ -591,7 +597,9 @@ impl TapManager {
         let aggregate_device_id = match create_aggregate_device(&tap_uuid, pid) {
             Ok(id) => id,
             Err(e) => {
-                unsafe { AudioHardwareDestroyProcessTap(tap_id); }
+                unsafe {
+                    AudioHardwareDestroyProcessTap(tap_id);
+                }
                 return Err(e);
             }
         };
@@ -651,7 +659,9 @@ impl TapManager {
     fn set_volume(&self, pid: u32, volume: f32) {
         if let Some(tap) = self.active_taps.get(&pid) {
             let factor = (volume / 100.0).clamp(0.0, 1.0);
-            tap.callback_data.volume.store(f32::to_bits(factor), Ordering::Relaxed);
+            tap.callback_data
+                .volume
+                .store(f32::to_bits(factor), Ordering::Relaxed);
         }
     }
 
@@ -789,7 +799,6 @@ unsafe fn log_tap_description_methods() {
     log::info!("CATapDescription init methods: {:?}", init_methods);
 }
 
-
 unsafe fn create_tap_description(pid: u32) -> Result<Retained<AnyObject>> {
     // Log available methods once for debugging
     static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -815,8 +824,7 @@ unsafe fn create_tap_description(pid: u32) -> Result<Retained<AnyObject>> {
 
     let ns_array_class =
         AnyClass::get(c"NSArray").ok_or_else(|| anyhow!("NSArray class not found"))?;
-    let processes_array: *mut AnyObject =
-        msg_send![ns_array_class, arrayWithObject: obj_id_number];
+    let processes_array: *mut AnyObject = msg_send![ns_array_class, arrayWithObject: obj_id_number];
     if processes_array.is_null() {
         return Err(anyhow!("Failed to create NSArray"));
     }
@@ -1030,10 +1038,8 @@ fn create_aggregate_device(tap_uuid: &str, pid: u32) -> Result<AudioObjectID> {
         );
 
         let mut aggregate_device_id: AudioObjectID = 0;
-        let status = AudioHardwareCreateAggregateDevice(
-            dict as CFDictionaryRef,
-            &mut aggregate_device_id,
-        );
+        let status =
+            AudioHardwareCreateAggregateDevice(dict as CFDictionaryRef, &mut aggregate_device_id);
 
         check_os_status(status, "AudioHardwareCreateAggregateDevice")?;
         log::info!("Aggregate device created: {}", aggregate_device_id);
@@ -1068,24 +1074,42 @@ unsafe extern "C" fn audio_io_proc(
     let cb_data = &*(client_data as *const IoCallbackData);
     let vol_factor = f32::from_bits(cb_data.volume.load(Ordering::Relaxed));
 
-    let in_num = if !input_data.is_null() { (*input_data).m_number_buffers } else { 0 };
-    let out_num = if !output_data.is_null() { (*output_data).m_number_buffers } else { 0 };
+    let in_num = if !input_data.is_null() {
+        (*input_data).m_number_buffers
+    } else {
+        0
+    };
+    let out_num = if !output_data.is_null() {
+        (*output_data).m_number_buffers
+    } else {
+        0
+    };
 
     // Store diagnostic info for the first few calls (read by main thread)
     let countdown = cb_data.diag_countdown.load(Ordering::Relaxed);
     if countdown > 0 {
-        cb_data.diag_countdown.store(countdown - 1, Ordering::Relaxed);
+        cb_data
+            .diag_countdown
+            .store(countdown - 1, Ordering::Relaxed);
         cb_data.diag_in_bufs.store(in_num, Ordering::Relaxed);
         cb_data.diag_out_bufs.store(out_num, Ordering::Relaxed);
         if !input_data.is_null() && in_num > 0 {
             let first_in = &*(*input_data).buffers_ptr();
-            cb_data.diag_in_bytes.store(first_in.m_data_byte_size, Ordering::Relaxed);
-            cb_data.diag_in_channels.store(first_in.m_number_channels, Ordering::Relaxed);
+            cb_data
+                .diag_in_bytes
+                .store(first_in.m_data_byte_size, Ordering::Relaxed);
+            cb_data
+                .diag_in_channels
+                .store(first_in.m_number_channels, Ordering::Relaxed);
         }
         if !output_data.is_null() && out_num > 0 {
             let first_out = &*(*output_data).buffers_ptr();
-            cb_data.diag_out_bytes.store(first_out.m_data_byte_size, Ordering::Relaxed);
-            cb_data.diag_out_channels.store(first_out.m_number_channels, Ordering::Relaxed);
+            cb_data
+                .diag_out_bytes
+                .store(first_out.m_data_byte_size, Ordering::Relaxed);
+            cb_data
+                .diag_out_channels
+                .store(first_out.m_number_channels, Ordering::Relaxed);
         }
     }
 
@@ -1110,8 +1134,7 @@ unsafe extern "C" fn audio_io_proc(
             / std::mem::size_of::<f32>();
 
         let in_samples = std::slice::from_raw_parts(in_buf.m_data as *const f32, sample_count);
-        let out_samples =
-            std::slice::from_raw_parts_mut(out_buf.m_data as *mut f32, sample_count);
+        let out_samples = std::slice::from_raw_parts_mut(out_buf.m_data as *mut f32, sample_count);
 
         for j in 0..sample_count {
             out_samples[j] = in_samples[j] * vol_factor;
@@ -1175,7 +1198,13 @@ fn create_and_start_io_proc(
         let bytes = status.to_be_bytes();
         let fourcc: String = bytes
             .iter()
-            .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '?' })
+            .map(|&b| {
+                if b.is_ascii_graphic() || b == b' ' {
+                    b as char
+                } else {
+                    '?'
+                }
+            })
             .collect();
         log::error!(
             "AudioDeviceStart failed on device {}: OSStatus {} ('{}')",
@@ -1186,7 +1215,11 @@ fn create_and_start_io_proc(
         unsafe {
             AudioDeviceDestroyIOProcID(device_id, io_proc_id);
         }
-        return Err(anyhow!("AudioDeviceStart failed: OSStatus {} ('{}')", status, fourcc));
+        return Err(anyhow!(
+            "AudioDeviceStart failed: OSStatus {} ('{}')",
+            status,
+            fourcc
+        ));
     }
 
     // Wait briefly then log IOProc diagnostic data
@@ -1229,10 +1262,7 @@ impl Default for MacosAudioManager {
 // F5 fix: Force cleanup even if mutex is poisoned.
 impl Drop for MacosAudioManager {
     fn drop(&mut self) {
-        let mut manager = self
-            .tap_manager
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut manager = self.tap_manager.lock().unwrap_or_else(|e| e.into_inner());
         manager.cleanup();
     }
 }
