@@ -114,8 +114,10 @@
 		width: 60px;
 		height: 320px;
 		background: transparent;
-		padding: 8px;
+		padding: 7px;
 		margin: 0 8px;
+		border: 1px solid transparent;
+		border-radius: 8px;
 	}
 
 	.fader-header {
@@ -199,9 +201,8 @@
 	}
 
 	.fader-container.drag-over {
-		border: 1px solid rgba(100, 180, 255, 0.6);
+		border-color: rgba(100, 180, 255, 0.6);
 		box-shadow: 0 0 12px rgba(100, 180, 255, 0.3);
-		border-radius: 8px;
 	}
 
 	.fader-container.drop-success {
